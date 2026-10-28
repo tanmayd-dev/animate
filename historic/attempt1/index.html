@@ -1,0 +1,1996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ahh Ke Gaa — An Animated Story</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden;font-family:'Georgia',serif}
+canvas{display:block}
+
+/* ── Fade overlay ── */
+#fade{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:#000;pointer-events:none;z-index:5;
+  opacity:1;transition:opacity 1.2s ease;
+}
+
+/* ── Narration ── */
+#narration{
+  position:fixed;bottom:10%;left:50%;transform:translateX(-50%);
+  max-width:680px;width:90%;text-align:center;
+  color:#eee;font-size:1.15rem;line-height:1.8;
+  text-shadow:0 0 20px #000,0 0 40px #000,0 2px 4px rgba(0,0,0,0.9);
+  padding:18px 28px;
+  background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);
+  border-radius:10px;border:1px solid rgba(255,255,255,0.06);
+  opacity:0;transition:opacity 0.7s ease;
+  z-index:12;pointer-events:none;
+}
+#narration em{color:#ffdd99;font-style:normal}
+#narration strong{color:#ff9966}
+
+/* ── Scene title ── */
+#scene-title{
+  position:fixed;top:30px;left:50%;transform:translateX(-50%);
+  color:#ffcc88;font-size:0.85rem;letter-spacing:4px;text-transform:uppercase;
+  text-shadow:0 0 15px rgba(255,136,0,0.6);
+  opacity:0;transition:opacity 0.8s;z-index:12;pointer-events:none;
+}
+
+/* ── Progress ── */
+#progress{
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+  display:flex;gap:10px;z-index:12;
+}
+.dot{
+  width:8px;height:8px;border-radius:50%;
+  background:rgba(255,255,255,0.2);transition:all 0.5s;
+}
+.dot.active{background:#ffcc88;box-shadow:0 0 8px #ffaa00;transform:scale(1.3)}
+
+/* ── Start screen ── */
+#start-screen{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:radial-gradient(ellipse at center,#0a0a12 0%,#000 70%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:100;color:#fff;
+}
+#start-screen h1{
+  font-size:3.2rem;letter-spacing:8px;color:#ffcc88;
+  text-shadow:0 0 40px rgba(255,136,0,0.4),0 0 80px rgba(255,68,0,0.2);
+  margin-bottom:12px;
+}
+#start-screen .subtitle{color:#887766;font-size:0.9rem;letter-spacing:2px;margin-bottom:50px}
+#start-btn{
+  background:none;border:1px solid rgba(255,204,136,0.5);color:#ffcc88;
+  padding:14px 48px;font-size:1rem;letter-spacing:3px;
+  cursor:pointer;border-radius:3px;font-family:Georgia,serif;
+  transition:all 0.3s;
+}
+#start-btn:hover{background:rgba(255,204,136,0.15);border-color:#ffcc88}
+
+#halloween{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  color:#ff6633;font-size:2rem;letter-spacing:6px;
+  text-shadow:0 0 30px #ff3300,0 0 60px #ff0000;
+  opacity:0;transition:opacity 2s;z-index:15;pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>AHH KE GAA</h1>
+  <div class="subtitle">A Halloween Story</div>
+  <button id="start-btn" onclick="begin()">▶&ensp;BEGIN</button>
+</div>
+
+<div id="fade"></div>
+<div id="narration"></div>
+<div id="scene-title"></div>
+<div id="progress"></div>
+<div id="halloween">🎃 Happy Halloween 🎃</div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   AHH KE GAA — A 3D Animated Halloween Story
+   Proper spatial layout, character facing, articulated animation
+   ═══════════════════════════════════════════════════════════════════ */
+
+// ── THREE.JS CORE SETUP ──────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 500);
+camera.position.set(0, 5, 10);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ── UTILITIES ────────────────────────────────────────────────────
+function lerp(a,b,t){ return a+(b-a)*t; }
+function easeInOut(t){ return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
+function easeOut(t){ return 1-Math.pow(1-t,3); }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function v3(x,y,z){ return new THREE.Vector3(x,y,z); }
+
+/**
+ * Face a character toward a world position (Y-axis rotation only).
+ * Characters are built facing +Z, so rotation.y = 0 means facing +Z.
+ */
+function faceToward(obj, tx, tz){
+  obj.rotation.y = Math.atan2(tx - obj.position.x, tz - obj.position.z);
+}
+
+// Smooth camera lerp
+function lerpCamera(cam, targetPos, targetLook, speed){
+  cam.position.lerp(targetPos, speed);
+  // Store lookAt target for smooth interpolation
+  if(!cam.userData._look) cam.userData._look = targetLook.clone();
+  cam.userData._look.lerp(targetLook, speed);
+  cam.lookAt(cam.userData._look);
+}
+
+// ── AUDIO SYSTEM ─────────────────────────────────────────────────
+let audioCtx = null;
+let masterGain = null;
+
+function initAudio(){
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.3;
+  masterGain.connect(audioCtx.destination);
+}
+
+function playChant(voices=1, speed=1, volume=0.12){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  for(let v=0; v<voices; v++){
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = v===0 ? 'sine' : 'triangle';
+    const detune = (v-voices/2)*8;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(volume, now+0.1);
+    // "Ahh" C4→E4
+    osc.frequency.setValueAtTime(261.63+detune, now);
+    osc.frequency.linearRampToValueAtTime(329.63+detune, now+0.5/speed);
+    // "Ke" G4
+    osc.frequency.setValueAtTime(392+detune, now+0.6/speed);
+    // "Gaa" E4
+    osc.frequency.setValueAtTime(329.63+detune, now+0.8/speed);
+    // "Luuuu" E4→C4 descend
+    osc.frequency.linearRampToValueAtTime(261.63+detune, now+2.0/speed);
+    g.gain.linearRampToValueAtTime(0, now+2.3/speed);
+    osc.start(now); osc.stop(now+2.4/speed);
+  }
+}
+
+function playHorrorDrone(duration=5){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  [38,40,57,76].forEach((freq,i) => {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.connect(g); g.connect(masterGain);
+    osc.type = i<2?'sawtooth':'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.06, now+1);
+    g.gain.linearRampToValueAtTime(0, now+duration);
+    osc.start(now); osc.stop(now+duration+0.1);
+  });
+}
+
+// ── MATERIALS ────────────────────────────────────────────────────
+const M = {
+  skin:    new THREE.MeshStandardMaterial({color:0xf5c49c, roughness:0.8}),
+  hair:    new THREE.MeshStandardMaterial({color:0x3b2507, roughness:0.9}),
+  shirt:   new THREE.MeshStandardMaterial({color:0x2d5a27, roughness:0.75}),
+  jeans:   new THREE.MeshStandardMaterial({color:0x2b3a5c, roughness:0.8}),
+  shoe:    new THREE.MeshStandardMaterial({color:0x2a1a0a, roughness:0.9}),
+  rope:    new THREE.MeshStandardMaterial({color:0xc49a50, roughness:0.85}),
+  ropeOld: new THREE.MeshStandardMaterial({color:0x8a6a30, roughness:0.9}),
+  white:   new THREE.MeshStandardMaterial({color:0xffffff}),
+  pupil:   new THREE.MeshStandardMaterial({color:0x111122}),
+  blood:   new THREE.MeshStandardMaterial({color:0x881111, roughness:0.5}),
+};
+function ponyMat(color){ return new THREE.MeshStandardMaterial({color, roughness:0.7}); }
+function maneMat(color){ return new THREE.MeshStandardMaterial({color, roughness:0.55}); }
+
+// ── CHARACTER: ANON ──────────────────────────────────────────────
+// Built facing +Z. Height ≈ 1.8 units.
+// Returns { group, body, head, leftArm, rightArm, leftLeg, rightLeg }
+function makeAnon(shirtColor=0x2d5a27){
+  const root = new THREE.Group();
+
+  // Body group (for leaning)
+  const body = new THREE.Group();
+  root.add(body);
+
+  // Torso
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.52, 0.22),
+    new THREE.MeshStandardMaterial({color:shirtColor, roughness:0.75})
+  );
+  torso.position.y = 1.06; torso.castShadow=true;
+  body.add(torso);
+
+  // Head
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 1.52, 0);
+  body.add(headGroup);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), M.skin);
+  head.scale.set(1, 1.05, 0.95); head.castShadow=true;
+  headGroup.add(head);
+
+  // Hair
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.165, 12, 8), M.hair);
+  hair.scale.set(1.02, 0.6, 1.02); hair.position.y = 0.06;
+  headGroup.add(hair);
+
+  // Eyes (on the +Z face)
+  [-0.055, 0.055].forEach(x => {
+    const ew = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), M.white);
+    ew.position.set(x, 0.02, 0.13);
+    headGroup.add(ew);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 4), M.pupil);
+    p.position.set(x, 0.02, 0.15);
+    headGroup.add(p);
+  });
+
+  // Arms — pivoted at shoulder
+  const arms = {};
+  [{name:'leftArm', x:-0.24}, {name:'rightArm', x:0.24}].forEach(({name, x}) => {
+    const armGroup = new THREE.Group();
+    armGroup.position.set(x, 1.3, 0); // shoulder
+    body.add(armGroup);
+
+    // Upper arm
+    const upper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.045, 0.32, 8),
+      new THREE.MeshStandardMaterial({color:shirtColor, roughness:0.75})
+    );
+    upper.position.y = -0.16; upper.castShadow=true;
+    armGroup.add(upper);
+
+    // Forearm group (pivots at elbow)
+    const forearmGroup = new THREE.Group();
+    forearmGroup.position.set(0, -0.32, 0); // elbow
+    armGroup.add(forearmGroup);
+
+    const forearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.042, 0.038, 0.28, 8), M.skin
+    );
+    forearm.position.y = -0.14; forearm.castShadow=true;
+    forearmGroup.add(forearm);
+
+    // Hand
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), M.skin);
+    hand.position.y = -0.30;
+    forearmGroup.add(hand);
+
+    arms[name] = { group: armGroup, forearm: forearmGroup, hand };
+  });
+
+  // Legs — pivoted at hip
+  const legs = {};
+  [{name:'leftLeg', x:-0.09}, {name:'rightLeg', x:0.09}].forEach(({name, x}) => {
+    const legGroup = new THREE.Group();
+    legGroup.position.set(x, 0.78, 0); // hip joint
+    root.add(legGroup); // attached to root, not body, so leaning doesn't move legs
+
+    const upper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.055, 0.4, 8), M.jeans
+    );
+    upper.position.y = -0.2; upper.castShadow=true;
+    legGroup.add(upper);
+
+    // Lower leg
+    const lowerGroup = new THREE.Group();
+    lowerGroup.position.set(0, -0.4, 0); // knee
+    legGroup.add(lowerGroup);
+
+    const lower = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.045, 0.38, 8), M.jeans
+    );
+    lower.position.y = -0.19; lower.castShadow=true;
+    lowerGroup.add(lower);
+
+    // Shoe
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.06, 0.16), M.shoe
+    );
+    shoe.position.set(0, -0.4, 0.03); shoe.castShadow=true;
+    lowerGroup.add(shoe);
+
+    legs[name] = { group: legGroup, lower: lowerGroup };
+  });
+
+  root.userData = { body, headGroup, arms, legs, type:'anon' };
+  return root;
+}
+
+// Anon idle breathing
+function animateAnonIdle(anon, t){
+  const d = anon.userData;
+  d.body.position.y = Math.sin(t*1.2)*0.005;
+  // Gentle arm sway
+  d.arms.leftArm.group.rotation.z = 0.05 + Math.sin(t*0.8)*0.02;
+  d.arms.rightArm.group.rotation.z = -0.05 - Math.sin(t*0.8)*0.02;
+}
+
+// Anon walking animation
+function animateAnonWalk(anon, t, speed=4){
+  const d = anon.userData;
+  const s = Math.sin(t*speed);
+  d.legs.leftLeg.group.rotation.x = s * 0.4;
+  d.legs.rightLeg.group.rotation.x = -s * 0.4;
+  d.arms.leftArm.group.rotation.x = -s * 0.25;
+  d.arms.rightArm.group.rotation.x = s * 0.25;
+  d.body.position.y = Math.abs(Math.sin(t*speed*2))*0.02;
+}
+
+// Anon pulling animation (leaning back, arms forward toward -Z relative to character)
+function animateAnonPull(anon, t, intensity=1){
+  const d = anon.userData;
+  const tug = Math.sin(t*2.5) * 0.12 * intensity;
+  // Lean back
+  d.body.rotation.x = (0.15 + tug) * intensity;
+  // Arms reach forward (toward +Z in local space = toward what character faces)
+  d.arms.leftArm.group.rotation.x = (-1.3 + tug*2) * intensity;
+  d.arms.rightArm.group.rotation.x = (-1.3 + tug*2) * intensity;
+  d.arms.leftArm.forearm.rotation.x = -0.3 * intensity;
+  d.arms.rightArm.forearm.rotation.x = -0.3 * intensity;
+  // Legs brace
+  d.legs.leftLeg.group.rotation.x = (-0.15 - tug*0.5) * intensity;
+  d.legs.rightLeg.group.rotation.x = (0.1 + tug*0.3) * intensity;
+}
+
+// Reset Anon pose
+function resetAnonPose(anon){
+  const d = anon.userData;
+  d.body.rotation.set(0,0,0);
+  d.body.position.set(0,0,0);
+  Object.values(d.arms).forEach(a => {
+    a.group.rotation.set(0,0,0);
+    a.forearm.rotation.set(0,0,0);
+  });
+  Object.values(d.legs).forEach(l => {
+    l.group.rotation.set(0,0,0);
+    l.lower.rotation.set(0,0,0);
+  });
+}
+
+// ── CHARACTER: PONY ──────────────────────────────────────────────
+// Built facing +Z. About 0.9 units tall at head.
+// config: { body, mane, tail, eye, name }
+function makePony(config){
+  const { body:bc, mane:mc, tail:tc, eye:ec, name } = config;
+  const bm = ponyMat(bc), mm = maneMat(mc), tm = maneMat(tc||mc);
+  const root = new THREE.Group();
+
+  const bodyGroup = new THREE.Group();
+  root.add(bodyGroup);
+
+  // Barrel — horizontal ellipsoid, centered at y≈0.52
+  const barrel = new THREE.Mesh(new THREE.SphereGeometry(1,16,12), bm);
+  barrel.scale.set(0.22, 0.20, 0.35);
+  barrel.position.set(0, 0.52, 0);
+  barrel.castShadow=true;
+  bodyGroup.add(barrel);
+
+  // Neck — tilted toward +Z (face direction)
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.10,0.22,8), bm);
+  neck.position.set(0, 0.68, 0.28);
+  neck.rotation.x = -0.6;
+  bodyGroup.add(neck);
+
+  // Head group — positioned at top-front
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 0.80, 0.38);
+  bodyGroup.add(headGroup);
+
+  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.15,12,10), bm);
+  headMesh.scale.set(0.9, 0.85, 1.0);
+  headGroup.add(headMesh);
+
+  // Snout — extends in +Z
+  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.08,8,6), bm);
+  snout.scale.set(0.75, 0.55, 1.1);
+  snout.position.set(0, -0.04, 0.12);
+  headGroup.add(snout);
+
+  // Eyes — large, on the sides, facing partly forward
+  [-1,1].forEach(side => {
+    const eyeW = new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6), M.white);
+    eyeW.scale.set(0.7, 1, 0.5);
+    eyeW.position.set(side*0.09, 0.03, 0.09);
+    headGroup.add(eyeW);
+
+    const iris = new THREE.Mesh(
+      new THREE.SphereGeometry(0.035,8,6),
+      new THREE.MeshStandardMaterial({color:ec||0x4488cc})
+    );
+    iris.position.set(side*0.09, 0.03, 0.125);
+    headGroup.add(iris);
+
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.018,6,4), M.pupil);
+    pupil.position.set(side*0.09, 0.03, 0.14);
+    headGroup.add(pupil);
+  });
+
+  // Ears
+  [-1,1].forEach(side => {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.04,0.10,6), bm);
+    ear.position.set(side*0.08, 0.16, 0);
+    ear.rotation.z = side*0.25;
+    headGroup.add(ear);
+  });
+
+  // Mane — top of head + cascading down neck
+  const maneTop = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.08,0.18), mm);
+  maneTop.position.set(0, 0.14, -0.02);
+  headGroup.add(maneTop);
+
+  const maneBack = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.20,0.16), mm);
+  maneBack.position.set(0, 0.72, 0.18);
+  bodyGroup.add(maneBack);
+
+  // Tail — extends from rear (-Z), angled down
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.055,0.35,6), tm);
+  tail.position.set(0, 0.42, -0.38);
+  tail.rotation.x = 0.6;
+  bodyGroup.add(tail);
+
+  // Legs — 4 legs, pivoted at body
+  const legPositions = [
+    {x:-0.10, z:0.18, name:'fl'},  // front-left
+    {x: 0.10, z:0.18, name:'fr'},  // front-right
+    {x:-0.10, z:-0.18, name:'rl'}, // rear-left
+    {x: 0.10, z:-0.18, name:'rr'}, // rear-right
+  ];
+  const legs = {};
+  legPositions.forEach(({x,z,name:ln}) => {
+    const lg = new THREE.Group();
+    lg.position.set(x, 0.32, z);
+
+    const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.03,0.32,6), bm);
+    legMesh.position.y = -0.16; legMesh.castShadow=true;
+    lg.add(legMesh);
+
+    // Hoof
+    const hoof = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035,0.04,0.04,6),
+      new THREE.MeshStandardMaterial({color:0x333333, roughness:0.9})
+    );
+    hoof.position.y = -0.32;
+    lg.add(hoof);
+
+    root.add(lg);
+    legs[ln] = lg;
+  });
+
+  root.userData = { bodyGroup, headGroup, barrel, legs, type:'pony', name };
+  return root;
+}
+
+// Pony walking
+function animatePonyWalk(pony, t, speed=4, amp=0.35){
+  const legs = pony.userData.legs;
+  const s = Math.sin(t*speed);
+  legs.fl.rotation.x = s * amp;
+  legs.rr.rotation.x = s * amp;
+  legs.fr.rotation.x = -s * amp;
+  legs.rl.rotation.x = -s * amp;
+}
+
+// Pony pulling (all legs braced, body leaning back)
+function animatePonyPull(pony, t, intensity=1){
+  const d = pony.userData;
+  const tug = Math.sin(t*2.5) * 0.1 * intensity;
+  d.bodyGroup.rotation.x = (0.12 + tug) * intensity;
+  d.legs.fl.rotation.x = (-0.25 - tug) * intensity;
+  d.legs.fr.rotation.x = (-0.25 - tug) * intensity;
+  d.legs.rl.rotation.x = (0.2 + tug*0.5) * intensity;
+  d.legs.rr.rotation.x = (0.2 + tug*0.5) * intensity;
+}
+
+// Pony idle
+function animatePonyIdle(pony, t){
+  const d = pony.userData;
+  d.bodyGroup.position.y = Math.sin(t*1.5)*0.003;
+  // Tail wag
+  const tail = d.bodyGroup.children.find(c => c.geometry && c.geometry.type === 'CylinderGeometry' && c.position.z < -0.3);
+  if(tail) tail.rotation.z = Math.sin(t*2)*0.15;
+}
+
+// ── ENVIRONMENT ──────────────────────────────────────────────────
+function makeGround(color=0x4a7c3f){
+  const g = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color, roughness:0.95})
+  );
+  g.rotation.x = -Math.PI/2;
+  g.receiveShadow = true;
+  return g;
+}
+
+function makeSky(top, bot){
+  const geo = new THREE.SphereGeometry(300,32,16);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { top:{value:new THREE.Color(top)}, bot:{value:new THREE.Color(bot)} },
+    vertexShader: `varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader: `varying vec3 vP;uniform vec3 top,bot;void main(){float t=clamp((vP.y+300.0)/600.0,0.0,1.0);gl_FragColor=vec4(mix(bot,top,t),1.0);}`,
+    side: THREE.BackSide
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function makeTree(x, z, h=3, crownR=1.8, trunkC=0x5c3d1e, crownC=0x2d6a1f){
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.25, h, 8),
+    new THREE.MeshStandardMaterial({color:trunkC, roughness:0.95})
+  );
+  trunk.position.set(x, h/2, z); trunk.castShadow=true; trunk.receiveShadow=true;
+  g.add(trunk);
+
+  const crown = new THREE.Mesh(
+    new THREE.SphereGeometry(crownR, 12, 8),
+    new THREE.MeshStandardMaterial({color:crownC, roughness:0.8})
+  );
+  crown.position.set(x, h + crownR*0.6, z); crown.castShadow=true;
+  g.add(crown);
+  return g;
+}
+
+function makeBench(px=0, pz=0){
+  // Bench faces +Z (the sitter looks toward +Z)
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({color:0x8B5A2B, roughness:0.9});
+  const darkWood = new THREE.MeshStandardMaterial({color:0x5a3518, roughness:0.9});
+
+  // Seat plank
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.5), wood);
+  seat.position.set(0, 0.52, 0); seat.castShadow=true; seat.receiveShadow=true;
+  g.add(seat);
+  // Second plank
+  const seat2 = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.5), wood);
+  seat2.position.set(0, 0.52, -0.12); seat2.castShadow=true;
+  g.add(seat2);
+
+  // Backrest
+  const back1 = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.45), wood);
+  back1.position.set(0, 0.85, -0.34);
+  back1.rotation.x = 0.15;
+  back1.castShadow=true;
+  g.add(back1);
+
+  // Legs (A-frame)
+  [-0.6, 0.6].forEach(x => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.52, 0.55), darkWood);
+    leg.position.set(x, 0.26, -0.08); leg.castShadow=true;
+    g.add(leg);
+    // Armrest
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.35), darkWood);
+    arm.position.set(x, 0.62, -0.08);
+    g.add(arm);
+  });
+
+  g.position.set(px, 0, pz);
+  return g;
+}
+
+// Newspaper (thin white box with slight angle)
+function makeNewspaper(){
+  const g = new THREE.Group();
+  const paper = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.60, 0.01),
+    new THREE.MeshStandardMaterial({color:0xf0e8d0, roughness:0.95})
+  );
+  // A few "text" lines
+  for(let i=0;i<5;i++){
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.01, 0.012),
+      new THREE.MeshStandardMaterial({color:0x444444})
+    );
+    line.position.set(0, 0.2 - i*0.08, 0.006);
+    g.add(line);
+  }
+  g.add(paper);
+  return g;
+}
+
+// ── ROPE SYSTEM ──────────────────────────────────────────────────
+// Creates a tube mesh from control points. Call update() to reshape.
+class Rope {
+  constructor(points, radius=0.022, color=0xc49a50, segments=40){
+    this.points = points.map(p => p.clone());
+    this.radius = radius;
+    this.segments = segments;
+    this.mat = new THREE.MeshStandardMaterial({color, roughness:0.85});
+    this._build();
+  }
+  _build(){
+    const curve = new THREE.CatmullRomCurve3(this.points);
+    const geo = new THREE.TubeGeometry(curve, this.segments, this.radius, 8, false);
+    this.mesh = new THREE.Mesh(geo, this.mat);
+    this.mesh.castShadow = true;
+  }
+  update(newPoints){
+    if(newPoints) this.points = newPoints.map(p => p.clone ? p.clone() : new THREE.Vector3(p.x,p.y,p.z));
+    const curve = new THREE.CatmullRomCurve3(this.points);
+    const geo = new THREE.TubeGeometry(curve, this.segments, this.radius, 8, false);
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = geo;
+  }
+  setColor(color){
+    this.mat.color.set(color);
+  }
+}
+
+// ── PARTICLE SYSTEM (for brain rush) ─────────────────────────────
+function createParticles(count=200, spread=3){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  const vel = new Float32Array(count*3); // velocity stored in userData
+  for(let i=0;i<count;i++){
+    pos[i*3]   = (Math.random()-0.5)*spread;
+    pos[i*3+1] = Math.random()*spread;
+    pos[i*3+2] = (Math.random()-0.5)*spread;
+    vel[i*3]   = (Math.random()-0.5)*0.02;
+    vel[i*3+1] = 0.01+Math.random()*0.02;
+    vel[i*3+2] = (Math.random()-0.5)*0.02;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const mat = new THREE.PointsMaterial({
+    color:0xffdd66, size:0.08, transparent:true, opacity:0.7,
+    blending:THREE.AdditiveBlending, depthWrite:false
+  });
+  const points = new THREE.Points(geo, mat);
+  points.userData.vel = vel;
+  points.userData.count = count;
+  return points;
+}
+function updateParticles(particles, dt){
+  const pos = particles.geometry.attributes.position.array;
+  const vel = particles.userData.vel;
+  const n = particles.userData.count;
+  for(let i=0;i<n;i++){
+    pos[i*3]   += vel[i*3]*60*dt;
+    pos[i*3+1] += vel[i*3+1]*60*dt;
+    pos[i*3+2] += vel[i*3+2]*60*dt;
+    // Spiral upward
+    const angle = pos[i*3+1]*2;
+    pos[i*3] += Math.sin(angle)*0.005;
+    pos[i*3+2] += Math.cos(angle)*0.005;
+    // Reset if too high
+    if(pos[i*3+1]>4){ pos[i*3+1]=0; }
+  }
+  particles.geometry.attributes.position.needsUpdate = true;
+}
+
+// ── NARRATION SYSTEM ─────────────────────────────────────────────
+const narEl = document.getElementById('narration');
+const titleEl = document.getElementById('scene-title');
+const fadeEl = document.getElementById('fade');
+
+function showNarration(html, dur=4000){
+  return new Promise(res => {
+    narEl.style.opacity='0';
+    setTimeout(()=>{
+      narEl.innerHTML = html;
+      narEl.style.opacity='1';
+      setTimeout(()=>{
+        narEl.style.opacity='0';
+        setTimeout(res, 700);
+      }, dur);
+    }, 500);
+  });
+}
+
+function showTitle(text){
+  titleEl.textContent = text;
+  titleEl.style.opacity = '1';
+  setTimeout(()=>{ titleEl.style.opacity='0'; }, 3500);
+}
+
+async function fadeToBlack(ms=1200){
+  fadeEl.style.transition = `opacity ${ms}ms ease`;
+  fadeEl.style.opacity = '1';
+  await delay(ms+100);
+}
+async function fadeFromBlack(ms=1200){
+  fadeEl.style.transition = `opacity ${ms}ms ease`;
+  fadeEl.style.opacity = '0';
+  await delay(ms);
+}
+
+// ── SCENE MANAGEMENT ─────────────────────────────────────────────
+const TOTAL_SCENES = 7;
+const progressEl = document.getElementById('progress');
+const dots = [];
+for(let i=0;i<TOTAL_SCENES;i++){
+  const d = document.createElement('div');
+  d.className = 'dot'; progressEl.appendChild(d); dots.push(d);
+}
+
+let allSceneObjects = []; // everything added per-scene
+let allSceneLights = [];
+let animFn = ()=>{};
+let sceneT = 0;
+
+function addObj(obj){ scene.add(obj); allSceneObjects.push(obj); }
+function addLight(l){ scene.add(l); allSceneLights.push(l); }
+
+function clearScene(){
+  allSceneObjects.forEach(o=>{ scene.remove(o); });
+  allSceneLights.forEach(l=>{ scene.remove(l); });
+  allSceneObjects = [];
+  allSceneLights = [];
+  scene.fog = null;
+  animFn = ()=>{};
+  sceneT = 0;
+}
+
+function setSceneDot(i){
+  dots.forEach((d,j) => d.className = 'dot' + (j===i?' active':''));
+}
+
+async function transitionTo(nextFn){
+  await fadeToBlack(1000);
+  clearScene();
+  await nextFn();
+  await fadeFromBlack(1200);
+}
+
+// ── SCENE LIGHTS PRESETS ─────────────────────────────────────────
+function dayLights(){
+  const sun = new THREE.DirectionalLight(0xfff5dd, 1.4);
+  sun.position.set(15, 30, 10);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 80;
+  sun.shadow.camera.left = -20;
+  sun.shadow.camera.right = 20;
+  sun.shadow.camera.top = 20;
+  sun.shadow.camera.bottom = -20;
+  addLight(sun);
+  const amb = new THREE.AmbientLight(0x88aadd, 0.45);
+  addLight(amb);
+  const hemi = new THREE.HemisphereLight(0x87ceeb, 0x4a7c3f, 0.3);
+  addLight(hemi);
+}
+
+function nightLights(){
+  const moon = new THREE.DirectionalLight(0x4466aa, 0.3);
+  moon.position.set(-5, 20, 5);
+  moon.castShadow = true;
+  moon.shadow.mapSize.set(1024,1024);
+  addLight(moon);
+  const amb = new THREE.AmbientLight(0x0a1020, 0.8);
+  addLight(amb);
+}
+
+function horrorLights(){
+  const amb = new THREE.AmbientLight(0x080404, 0.9);
+  addLight(amb);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 0: PARK BENCH — Anon reading, Pinkie & Rainbow approach
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout (top-down, +Z is toward camera):
+
+           Camera (0, 2.5, 6)
+              ↓
+  Trees scattered behind bench (-Z side)
+  
+         Bench at origin, facing +Z
+         Anon sits on bench, facing +Z (toward camera)
+  
+  Rainbow (-3, 0.5, 1) → approaching, facing +X toward bench
+  Pinkie  (-3.5, 0, 2) → approaching, facing +X toward bench
+*/
+async function scene0(){
+  setSceneDot(0);
+  showTitle('Scene I — A Nice Day');
+  dayLights();
+
+  addObj(makeSky(0x87ceeb, 0xb8dced));
+  addObj(makeGround(0x5a9e40));
+
+  // Background trees
+  [[-5,-4],[-2,-5],[1,-4],[4,-3],[7,-5],[-7,-3],[3,-6]].forEach(([x,z]) => {
+    addObj(makeTree(x,z, 2.5+Math.random()*1.5, 1.3+Math.random()*0.8));
+  });
+
+  // Bench at origin, facing +Z
+  const bench = makeBench(0, 0);
+  addObj(bench);
+
+  // Anon — sitting on bench, facing +Z (toward camera)
+  const anon = makeAnon();
+  anon.position.set(0.2, 0.48, -0.05);
+  anon.rotation.y = 0; // facing +Z
+  // Sitting pose: bend legs, lean back slightly
+  anon.userData.legs.leftLeg.group.rotation.x = -1.4;
+  anon.userData.legs.leftLeg.lower.rotation.x = 1.5;
+  anon.userData.legs.rightLeg.group.rotation.x = -1.4;
+  anon.userData.legs.rightLeg.lower.rotation.x = 1.5;
+  addObj(anon);
+
+  // Newspaper held up in front of face
+  const paper = makeNewspaper();
+  paper.position.set(0.2, 1.25, 0.35);
+  paper.rotation.x = -0.1;
+  addObj(paper);
+
+  // Pinkie — starts at left, walks toward bench, faces bench (+X direction)
+  const pinkie = makePony({body:0xff88aa, mane:0xdd3377, eye:0x44aaff, name:'Pinkie'});
+  pinkie.position.set(-4, 0, 2);
+  pinkie.scale.setScalar(0.85);
+  faceToward(pinkie, 0, 0); // face toward bench
+  addObj(pinkie);
+
+  // Rainbow — flying, also approaching from left
+  const rainbow = makePony({body:0x44bbff, mane:0xff3366, tail:0xff8800, eye:0xff3366, name:'Rainbow'});
+  rainbow.position.set(-3.5, 0.7, 0.5);
+  rainbow.scale.setScalar(0.80);
+  faceToward(rainbow, 0, 0);
+  addObj(rainbow);
+
+  camera.position.set(0, 2.5, 6.5);
+  camera.userData._look = v3(0,1,0);
+  camera.lookAt(0,1,0);
+
+  // Animation phase
+  let phase = 0;
+  animFn = (dt) => {
+    sceneT += dt;
+
+    // Ponies approach
+    if(phase === 0){
+      pinkie.position.x = lerp(pinkie.position.x, -1.2, 0.015);
+      pinkie.position.z = lerp(pinkie.position.z, 1.2, 0.01);
+      rainbow.position.x = lerp(rainbow.position.x, -1.0, 0.012);
+      rainbow.position.z = lerp(rainbow.position.z, 0.3, 0.008);
+      faceToward(pinkie, 0.2, 0);
+      faceToward(rainbow, 0.2, 0);
+      animatePonyWalk(pinkie, sceneT, 5);
+      animatePonyWalk(rainbow, sceneT, 4.5);
+    } else {
+      // Stopped, idle
+      animatePonyIdle(pinkie, sceneT);
+      animatePonyIdle(rainbow, sceneT);
+    }
+
+    // Rainbow hovers
+    rainbow.position.y = 0.7 + Math.sin(sceneT*2)*0.08;
+
+    // Newspaper subtle movement
+    paper.rotation.z = Math.sin(sceneT*0.5)*0.02;
+
+    // Slow camera drift
+    lerpCamera(camera, v3(Math.sin(sceneT*0.12)*0.4, 2.5, 6.5), v3(0,1,0), 0.01);
+  };
+
+  await delay(2000);
+  await showNarration('A sunny day in Ponyville.<br>You\'re on a park bench, reading the newspaper.', 3500);
+
+  phase = 1; // stop ponies walking
+
+  await showNarration('Luna plushies outselling Celestia\'s this quarter.<br>Sunhorse had a bit of a meltdown.', 3500);
+  await showNarration('"C\'mooooon! Play with us!"<br>Pinkie and Rainbow Dash spotted you the moment you sat down.', 4000);
+  await showNarration('<strong>No.</strong><br>"Quit being lame, Anon!" — Rainbow<br>"We can race! Do pranks! Play Ahh Ke Gaa!" — Pinkie', 4500);
+  await showNarration('What?<br>"<em>Ahh Ke Gaa</em>." You don\'t even know what that is.', 3500);
+  await delay(1500);
+  await transitionTo(scene1);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 1: PLAYING AHH KE GAA
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout (top-down):
+  
+  Tree at (0, 0, 0)
+  Rope extends from tree in +X direction
+
+  All pullers face the tree (face -X), pulling the rope toward +X:
+    AJ at (2, 0, 0)   — closest to tree, facing tree
+    Rainbow (3, 0, 0)  — behind AJ, facing tree
+    Anon (4.2, 0, 0)   — behind Rainbow, facing tree
+    Pinkie (5.2, 0, 0) — at the back, facing tree
+
+  Camera at (4, 2.5, 5) looking at (2.5, 1, 0) — side view showing line + tree
+*/
+async function scene1(){
+  setSceneDot(1);
+  showTitle('Scene II — Ahh Ke Gaa');
+  dayLights();
+
+  addObj(makeSky(0x87ceeb, 0xb8dced));
+  addObj(makeGround(0x5a9e40));
+
+  // Background trees
+  [[-4,-5],[0,-6],[5,-4],[-6,-3],[8,-5],[3,-7]].forEach(([x,z]) => {
+    addObj(makeTree(x,z));
+  });
+
+  // The game tree — at origin
+  const gameTree = makeTree(0, 0, 3.5, 2.2);
+  addObj(gameTree);
+
+  // Rope from tree to the players
+  const ropePoints = [];
+  for(let i=0; i<12; i++){
+    const t = i/11;
+    ropePoints.push(v3(lerp(0.3, 5.5, t), 0.55 + Math.sin(t*Math.PI)*0.15, 0));
+  }
+  const rope = new Rope(ropePoints, 0.025);
+  addObj(rope.mesh);
+
+  // Characters — all face the tree (face toward -X, i.e. toward x=0)
+  const aj = makePony({body:0xf0a030, mane:0xe8c44a, tail:0xe8c44a, eye:0x44aa44, name:'AJ'});
+  aj.position.set(2, 0, 0);
+  aj.scale.setScalar(0.85);
+  faceToward(aj, 0, 0); // face tree
+  addObj(aj);
+
+  const rainbow = makePony({body:0x44bbff, mane:0xff3366, tail:0xff8800, eye:0xff3366, name:'Rainbow'});
+  rainbow.position.set(3, 0, 0);
+  rainbow.scale.setScalar(0.80);
+  faceToward(rainbow, 0, 0);
+  addObj(rainbow);
+
+  const anon = makeAnon();
+  anon.position.set(4.2, 0, 0);
+  faceToward(anon, 0, 0); // face tree
+  addObj(anon);
+
+  const pinkie = makePony({body:0xff88aa, mane:0xdd3377, eye:0x44aaff, name:'Pinkie'});
+  pinkie.position.set(5.2, 0, 0);
+  pinkie.scale.setScalar(0.85);
+  faceToward(pinkie, 0, 0);
+  addObj(pinkie);
+
+  camera.position.set(3.5, 2.5, 6);
+  camera.userData._look = v3(2.5, 0.8, 0);
+  camera.lookAt(2.5, 0.8, 0);
+
+  let pullPhase = false;
+  let brainRush = false;
+  let particles = null;
+
+  animFn = (dt) => {
+    sceneT += dt;
+
+    if(pullPhase){
+      // Everyone pulls rhythmically
+      animatePonyPull(aj, sceneT, 1);
+      animatePonyPull(rainbow, sceneT, 1);
+      animatePonyPull(pinkie, sceneT, 1);
+      animateAnonPull(anon, sceneT, 1);
+
+      // Rope sways with pulling
+      const tug = Math.sin(sceneT*2.5)*0.15;
+      for(let i=0;i<ropePoints.length;i++){
+        const t = i/(ropePoints.length-1);
+        ropePoints[i].y = 0.55 + Math.sin(t*Math.PI)*0.12 + Math.sin(sceneT*2.5+t*2)*0.05;
+        ropePoints[i].x = lerp(0.3, 5.5, t) + tug * t * 0.3;
+      }
+      rope.update(ropePoints);
+    } else {
+      // Idle
+      animatePonyIdle(aj, sceneT);
+      animatePonyIdle(rainbow, sceneT);
+      animatePonyIdle(pinkie, sceneT);
+      animateAnonIdle(anon, sceneT);
+    }
+
+    if(brainRush && particles){
+      updateParticles(particles, dt);
+      // Camera shake
+      camera.position.x = 4.2 + Math.sin(sceneT*15)*0.05;
+      camera.position.y = 1.8 + Math.cos(sceneT*12)*0.03;
+      lerpCamera(camera, v3(4.2, 1.8, 2.5), v3(4.2, 1.2, 0), 0.05);
+    } else {
+      // Slow camera orbit
+      const cx = 3.5 + Math.sin(sceneT*0.15)*1;
+      lerpCamera(camera, v3(cx, 2.5, 5.5), v3(2.5, 0.8, 0), 0.02);
+    }
+  };
+
+  await showNarration('Applejack ties a rope around the tree.<br>"This \'ere is a fine tree for Ah Ke Gaa!"', 4000);
+  await showNarration('"You and your friends just start pulling while you sing the song.<br><em>Ahh Ke Gaa, Luuuu~</em>"', 4000);
+  await showNarration('That sounds retarded.<br>"Just give it a try! One verse, and we\'ll leave you alone."', 3500);
+
+  // Start pulling
+  pullPhase = true;
+  playChant(2, 1, 0.1);
+  await showNarration('"Ahh Ke Gaa, Luuuu~ Ahh Ke Gaa, Luuuu~"<br>You take a deep breath... <em>Ahh Ke Gaa—</em>', 4500);
+
+  // BRAIN RUSH
+  brainRush = true;
+  pullPhase = false;
+  particles = createParticles(300, 2);
+  particles.position.copy(anon.position);
+  particles.position.y += 0.5;
+  addObj(particles);
+  resetAnonPose(anon);
+  // Anon stumbles back
+  anon.userData.body.rotation.x = 0.4;
+  playChant(4, 0.5, 0.15);
+
+  // Flash effect via renderer
+  renderer.toneMappingExposure = 3;
+  await delay(200);
+  renderer.toneMappingExposure = 1.5;
+  await delay(200);
+  renderer.toneMappingExposure = 1;
+
+  await showNarration('A flood of raw chemicals slams into your brain.<br>Warm summer breeze. The softest bed. Being held by the one you love.', 5000);
+
+  brainRush = false;
+  if(particles){ scene.remove(particles); }
+  resetAnonPose(anon);
+  faceToward(anon, 0, 0);
+  pullPhase = true;
+
+  await showNarration('"...Yeah. I do. Let\'s play some more."', 3500);
+  playChant(3, 1, 0.12);
+
+  await delay(4000);
+
+  await showNarration('The game wraps up. The ponies head home.<br>You remain. Still in a daze. Drool running down your chin.', 4500);
+  pullPhase = false;
+  await delay(2000);
+  await transitionTo(scene2);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 2: WITHDRAWAL — 1:09 AM
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout: Bedroom interior
+  - Bed along -Z wall, Anon lying on it facing +Z (up toward ceiling viewed from side)
+  - Simple room: floor, back wall, side walls
+  - Clock on wall
+  - Camera: side view, looking at the bed
+
+  Camera at (3, 2, 2) looking at (0, 0.8, 0)
+*/
+async function scene2(){
+  setSceneDot(2);
+  showTitle('Scene III — 1:09 AM');
+  nightLights();
+
+  addObj(makeSky(0x030812, 0x000000));
+
+  // Room
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(8,8),
+    new THREE.MeshStandardMaterial({color:0x3a2d1a, roughness:0.95})
+  );
+  floor.rotation.x = -Math.PI/2;
+  floor.receiveShadow = true;
+  addObj(floor);
+
+  const wallMat = new THREE.MeshStandardMaterial({color:0x2a2a3a, roughness:0.9});
+  const backWall = new THREE.Mesh(new THREE.PlaneGeometry(8,4), wallMat);
+  backWall.position.set(0,2,-4); addObj(backWall);
+
+  const sideWall = new THREE.Mesh(new THREE.PlaneGeometry(8,4), wallMat);
+  sideWall.position.set(-4,2,0); sideWall.rotation.y = Math.PI/2; addObj(sideWall);
+
+  // Window with moonlight
+  const windowFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 1.5, 0.05),
+    new THREE.MeshStandardMaterial({color:0x1a1a2a})
+  );
+  windowFrame.position.set(-3.97, 2.2, -1);
+  addObj(windowFrame);
+  const windowGlass = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1.3),
+    new THREE.MeshStandardMaterial({color:0x112244, emissive:0x112244, emissiveIntensity:0.3, transparent:true, opacity:0.7})
+  );
+  windowGlass.position.set(-3.95, 2.2, -1);
+  windowGlass.rotation.y = Math.PI/2;
+  addObj(windowGlass);
+
+  // Moonbeam
+  const moonBeam = new THREE.SpotLight(0x4466aa, 0.8, 10, 0.5);
+  moonBeam.position.set(-3.5, 3, -1);
+  moonBeam.target.position.set(0, 0, 0);
+  addLight(moonBeam);
+  addObj(moonBeam.target);
+
+  // Bed
+  const bedFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(1.8, 0.15, 2.5),
+    new THREE.MeshStandardMaterial({color:0x4a2c0a, roughness:0.9})
+  );
+  bedFrame.position.set(0, 0.3, -2);
+  bedFrame.castShadow = true;
+  addObj(bedFrame);
+
+  // Headboard
+  const headboard = new THREE.Mesh(
+    new THREE.BoxGeometry(1.8, 0.8, 0.08),
+    new THREE.MeshStandardMaterial({color:0x3a1c08, roughness:0.9})
+  );
+  headboard.position.set(0, 0.6, -3.2);
+  addObj(headboard);
+
+  const mattress = new THREE.Mesh(
+    new THREE.BoxGeometry(1.7, 0.18, 2.4),
+    new THREE.MeshStandardMaterial({color:0x667788, roughness:0.8})
+  );
+  mattress.position.set(0, 0.42, -2);
+  addObj(mattress);
+
+  const pillow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.10, 0.35),
+    new THREE.MeshStandardMaterial({color:0xccccdd, roughness:0.7})
+  );
+  pillow.position.set(0, 0.55, -3);
+  addObj(pillow);
+
+  // Blanket
+  const blanket = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 0.05, 1.8),
+    new THREE.MeshStandardMaterial({color:0x334455, roughness:0.8})
+  );
+  blanket.position.set(0, 0.56, -1.6);
+  addObj(blanket);
+
+  // Anon lying on bed — facing ceiling, head at -Z, feet at +Z
+  const anon = makeAnon();
+  anon.position.set(0, 0.55, -2);
+  anon.rotation.x = -Math.PI/2; // lying down
+  anon.scale.setScalar(0.85);
+  addObj(anon);
+
+  // Clock on wall
+  const clockFace = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.25, 0.03, 16),
+    new THREE.MeshStandardMaterial({color:0xeeeedd, emissive:0x111100, emissiveIntensity:0.3})
+  );
+  clockFace.position.set(1.5, 2.5, -3.97);
+  clockFace.rotation.x = Math.PI/2;
+  addObj(clockFace);
+
+  camera.position.set(3, 2.2, 0);
+  camera.userData._look = v3(0, 0.8, -2);
+  camera.lookAt(0, 0.8, -2);
+
+  animFn = (dt) => {
+    sceneT += dt;
+    // Anon tosses and turns
+    anon.rotation.z = Math.sin(sceneT*0.8) * 0.2;
+    anon.position.x = Math.sin(sceneT*0.6) * 0.15;
+    // Moonlight flicker
+    moonBeam.intensity = 0.8 + Math.sin(sceneT*0.3)*0.1;
+    // Slow camera
+    lerpCamera(camera, v3(3+Math.sin(sceneT*0.1)*0.3, 2.2, Math.sin(sceneT*0.08)*0.5), v3(0, 0.8, -2), 0.01);
+  };
+
+  await showNarration('Back home. Dinner. Bed.<br>But rest doesn\'t come.', 3500);
+  await showNarration('Whether it was some sort of magic ritual or simply some extremely specific process—<br>you\'d never felt that good in your life.', 4500);
+  await showNarration('And you\'re crashing. <strong>Hard.</strong><br>To them, it\'s a fun game.<br>To you, it\'s heroin mixed with angel pussy juice.', 5000);
+
+  // Camera slowly pushes in on the clock
+  animFn = (dt) => {
+    sceneT += dt;
+    anon.rotation.z = Math.sin(sceneT*1.5) * 0.3;
+    anon.position.x = Math.sin(sceneT) * 0.2;
+    lerpCamera(camera, v3(2, 2.5, -2), v3(1.5, 2.5, -4), 0.008);
+  };
+
+  await showNarration('The clock reads <strong>1:09 AM</strong>.<br><br>A bad thought enters your brain.', 4500);
+  await delay(1500);
+  await showNarration('What if you played...<br>a <em>little</em> more?', 3500);
+  await showNarration('Applejack has her rope. Just sitting in her shed.<br>You\'d just... <em>borrow</em> it.', 4000);
+  await delay(1500);
+  await transitionTo(scene3);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 3: TOWN MADNESS — shirtless, multiple ropes
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout: Open area, multiple trees in a circle around Anon
+  Anon at center (0, 0, 0) with ropes radiating to each tree.
+  He sways and thrashes, facing wherever.
+
+  Camera orbits around him.
+
+  Trees at: angles around a circle, radius 5
+*/
+async function scene3(){
+  setSceneDot(3);
+  showTitle('Scene IV — The Madness');
+  nightLights();
+
+  // Sickly orange-red point light on Anon
+  const madLight = new THREE.PointLight(0xff4400, 2, 15);
+  madLight.position.set(0, 3, 0);
+  addLight(madLight);
+
+  addObj(makeSky(0x030510, 0x000000));
+  addObj(makeGround(0x1a2a10));
+
+  // Stars
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = [];
+  for(let i=0;i<800;i++){
+    starPos.push((Math.random()-0.5)*400, 30+Math.random()*150, (Math.random()-0.5)*400);
+  }
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos,3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff, size:0.6}));
+  addObj(stars);
+
+  // Trees in a circle, radius 5
+  const treeCount = 6;
+  const treePositions = [];
+  for(let i=0;i<treeCount;i++){
+    const angle = (i/treeCount) * Math.PI * 2;
+    const tx = Math.cos(angle)*5;
+    const tz = Math.sin(angle)*5;
+    addObj(makeTree(tx, tz, 3, 1.5, 0x3d2000, 0x1a4d10));
+    treePositions.push({x:tx, z:tz});
+  }
+
+  // Background forest
+  for(let i=0;i<15;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = 10+Math.random()*10;
+    addObj(makeTree(Math.cos(a)*r, Math.sin(a)*r, 3+Math.random()*2, 1.5+Math.random(), 0x2a1500, 0x0d2208));
+  }
+
+  // Anon — shirtless (lighter shirt color = skin), at center
+  const anon = makeAnon(0xf5c49c); // skin-color shirt = shirtless look
+  anon.position.set(0, 0, 0);
+  addObj(anon);
+
+  // Ropes from Anon to each tree
+  const ropes = treePositions.map(tp => {
+    const pts = [];
+    for(let i=0;i<8;i++){
+      const t = i/7;
+      pts.push(v3(
+        lerp(0, tp.x, t),
+        0.7 + Math.sin(t*Math.PI)*0.4,
+        lerp(0, tp.z, t)
+      ));
+    }
+    const r = new Rope(pts, 0.02, 0xaa7722, 24);
+    addObj(r.mesh);
+    return { rope:r, target:tp };
+  });
+
+  // Blood glow on hands
+  const bloodLight = new THREE.PointLight(0xff1100, 1.5, 3);
+  bloodLight.position.set(0, 0.8, 0);
+  addLight(bloodLight);
+
+  camera.position.set(6, 4, 6);
+  camera.userData._look = v3(0,1,0);
+  camera.lookAt(0,1,0);
+
+  scene.fog = new THREE.FogExp2(0x020510, 0.04);
+
+  animFn = (dt) => {
+    sceneT += dt;
+
+    // Anon sways violently, faces random direction
+    anon.rotation.y = sceneT * 0.5;
+    anon.rotation.z = Math.sin(sceneT*3)*0.25;
+    anon.userData.body.rotation.x = Math.sin(sceneT*2)*0.2;
+    // Arms flail
+    anon.userData.arms.leftArm.group.rotation.x = -1.5 + Math.sin(sceneT*3.5)*0.5;
+    anon.userData.arms.rightArm.group.rotation.x = -1.5 + Math.cos(sceneT*3.5)*0.5;
+    anon.userData.arms.leftArm.group.rotation.z = Math.sin(sceneT*2)*0.3;
+    anon.userData.arms.rightArm.group.rotation.z = -Math.sin(sceneT*2)*0.3;
+
+    // Ropes pulse
+    ropes.forEach(({rope, target}, ri) => {
+      const pts = [];
+      for(let i=0;i<8;i++){
+        const t = i/7;
+        pts.push(v3(
+          lerp(Math.sin(sceneT*2)*0.2, target.x, t),
+          0.7 + Math.sin(t*Math.PI + sceneT*3 + ri)*0.3,
+          lerp(Math.cos(sceneT*2)*0.2, target.z, t)
+        ));
+      }
+      rope.update(pts);
+    });
+
+    // Mad light pulses
+    madLight.intensity = 2 + Math.sin(sceneT*5)*1;
+    bloodLight.intensity = 1.5 + Math.sin(sceneT*4)*0.8;
+
+    // Camera orbits
+    const camAngle = sceneT * 0.25;
+    const camR = 7 + Math.sin(sceneT*0.3)*1.5;
+    lerpCamera(camera,
+      v3(Math.cos(camAngle)*camR, 4+Math.sin(sceneT*0.2), Math.sin(camAngle)*camR),
+      v3(0, 1, 0), 0.03
+    );
+  };
+
+  playChant(3, 0.8, 0.15);
+  await showNarration('Derpy spots a figure at the edge of town.<br>Shirtless. Sweating. Eyes bloodshot.', 4000);
+  playHorrorDrone(8);
+  await showNarration('Every tree in range — roped.<br>Palms scraped raw. Blood smeared along the rope.', 4500);
+  playChant(5, 0.6, 0.18);
+  await showNarration('<strong>AHHHHH KEEEEEEEE GAAAAAAAAA LUUUHUUU!!!</strong>', 3500);
+  await showNarration('You collapse. World goes black.<br>Hospital. Nurse Redheart shakes her head.', 4000);
+  await showNarration('"You have to play in moderation."<br>Sure, nurse.<br><br>Two hours later, the shakes return.', 4500);
+  await showNarration('The CMC are playing. Your feet carry you toward them.<br>"Could I play... a little?"', 4500);
+  playChant(6, 0.5, 0.2);
+  await showNarration('A dozen ropes. A dozen trees. Foam on your chin.<br>The smile of a madman.', 4500);
+  await showNarration('Twilight appears with a rock.<br><strong>*THUNK*</strong><br>Darkness.', 3500);
+  await delay(2000);
+  await transitionTo(scene4);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 4: TWILIGHT'S LAB — Tied to a chair, escape
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout: Interior of Twilight's basement lab
+  - Anon tied to chair at center, facing +Z (toward camera)
+  - Twilight at (1.5, 0, 1.5), facing Anon (-X, -Z direction)
+  - Bookshelves along walls
+  - Purple-tinted lighting
+  
+  Camera at (0, 2, 4) looking at (0, 1.2, 0)
+*/
+async function scene4(){
+  setSceneDot(4);
+  showTitle('Scene V — Citizens Arrest');
+  nightLights();
+
+  const labLight = new THREE.PointLight(0x8866cc, 2.5, 15);
+  labLight.position.set(0, 4, 0);
+  addLight(labLight);
+
+  const labLight2 = new THREE.PointLight(0x553388, 1, 10);
+  labLight2.position.set(-3, 3, -2);
+  addLight(labLight2);
+
+  // Room
+  const floorMat = new THREE.MeshStandardMaterial({color:0x1a1520, roughness:0.9});
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(10,10), floorMat);
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow=true; addObj(floor);
+
+  const wallMat = new THREE.MeshStandardMaterial({color:0x1e1828, roughness:0.85});
+  // Walls
+  const wallB = new THREE.Mesh(new THREE.PlaneGeometry(10,5), wallMat);
+  wallB.position.set(0,2.5,-5); addObj(wallB);
+  const wallL = new THREE.Mesh(new THREE.PlaneGeometry(10,5), wallMat);
+  wallL.position.set(-5,2.5,0); wallL.rotation.y=Math.PI/2; addObj(wallL);
+  const wallR = new THREE.Mesh(new THREE.PlaneGeometry(10,5), wallMat);
+  wallR.position.set(5,2.5,0); wallR.rotation.y=-Math.PI/2; addObj(wallR);
+
+  // Bookshelves on left wall
+  for(let shelf=0; shelf<4; shelf++){
+    const s = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.04, 2),
+      new THREE.MeshStandardMaterial({color:0x3a2010, roughness:0.9})
+    );
+    s.position.set(-4.95, 1+shelf*0.75, -2);
+    s.rotation.y = Math.PI/2;
+    addObj(s);
+
+    // Books on shelf
+    for(let b=0; b<8; b++){
+      const bookColor = [0x882222,0x228822,0x222288,0x886622,0x882266,0x226688,0x668822,0x884422][b];
+      const book = new THREE.Mesh(
+        new THREE.BoxGeometry(0.15, 0.5+Math.random()*0.15, 0.2),
+        new THREE.MeshStandardMaterial({color:bookColor, roughness:0.8})
+      );
+      book.position.set(-4.85, 1.3+shelf*0.75, -2.8+b*0.28);
+      book.rotation.y = Math.PI/2;
+      addObj(book);
+    }
+  }
+
+  // Chair
+  const chairSeat = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.06, 0.5),
+    new THREE.MeshStandardMaterial({color:0x4a2c0a, roughness:0.9})
+  );
+  chairSeat.position.set(0, 0.5, 0); addObj(chairSeat);
+  // Chair back
+  const chairBack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.7, 0.06),
+    new THREE.MeshStandardMaterial({color:0x4a2c0a, roughness:0.9})
+  );
+  chairBack.position.set(0, 0.85, -0.22); addObj(chairBack);
+  // Chair legs
+  [[-0.25,-0.2],[0.25,-0.2],[-0.25,0.2],[0.25,0.2]].forEach(([x,z]) => {
+    const leg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025,0.025,0.5,6),
+      new THREE.MeshStandardMaterial({color:0x3a1c08, roughness:0.9})
+    );
+    leg.position.set(x, 0.25, z); addObj(leg);
+  });
+
+  // Anon tied to chair, facing +Z (toward camera)
+  const anon = makeAnon(0x555566);
+  anon.position.set(0, 0.45, 0);
+  anon.rotation.y = 0; // facing camera
+  anon.scale.setScalar(0.85);
+  // Sitting pose
+  anon.userData.legs.leftLeg.group.rotation.x = -1.4;
+  anon.userData.legs.leftLeg.lower.rotation.x = 1.5;
+  anon.userData.legs.rightLeg.group.rotation.x = -1.4;
+  anon.userData.legs.rightLeg.lower.rotation.x = 1.5;
+  // Arms tied behind (rotated back)
+  anon.userData.arms.leftArm.group.rotation.x = 0.4;
+  anon.userData.arms.leftArm.group.rotation.z = 0.3;
+  anon.userData.arms.rightArm.group.rotation.x = 0.4;
+  anon.userData.arms.rightArm.group.rotation.z = -0.3;
+  addObj(anon);
+
+  // Binding ropes around torso
+  const bindPts1 = [];
+  for(let i=0;i<=16;i++){
+    const a = (i/16)*Math.PI*2;
+    bindPts1.push(v3(Math.cos(a)*0.28, 1.0, Math.sin(a)*0.18));
+  }
+  const bind1 = new Rope(bindPts1, 0.018, 0xaa7722, 20);
+  addObj(bind1.mesh);
+
+  const bindPts2 = [];
+  for(let i=0;i<=16;i++){
+    const a = (i/16)*Math.PI*2;
+    bindPts2.push(v3(Math.cos(a)*0.30, 0.75, Math.sin(a)*0.20));
+  }
+  const bind2 = new Rope(bindPts2, 0.018, 0xaa7722, 20);
+  addObj(bind2.mesh);
+
+  // Twilight — to the right, facing Anon
+  const twilight = makePony({body:0x9966cc, mane:0x2a1250, tail:0x2a1250, eye:0x9933cc, name:'Twilight'});
+  twilight.position.set(2, 0, 2);
+  twilight.scale.setScalar(0.85);
+  faceToward(twilight, 0, 0); // face Anon
+  addObj(twilight);
+
+  camera.position.set(0, 2.2, 4.5);
+  camera.userData._look = v3(0, 1.0, 0);
+  camera.lookAt(0, 1.0, 0);
+
+  animFn = (dt) => {
+    sceneT += dt;
+    // Anon struggles
+    anon.rotation.z = Math.sin(sceneT*4)*0.06;
+    anon.position.x = Math.sin(sceneT*5)*0.03;
+    // Twilight looks guilty, shifts weight
+    animatePonyIdle(twilight, sceneT);
+    twilight.userData.headGroup.rotation.y = Math.sin(sceneT*0.5)*0.1;
+    // Lab light flickers
+    labLight.intensity = 2.5 + Math.sin(sceneT*0.7)*0.3;
+
+    lerpCamera(camera, v3(Math.sin(sceneT*0.12)*0.5, 2.2, 4.5), v3(0, 1.0, 0), 0.01);
+  };
+
+  await showNarration('You wake up tied to a chair.<br>Twilight\'s laboratory.', 3500);
+  await showNarration('"I know this looks bad, but you left us no choice!"<br>"Citizens arrest. The guard will be here in the morning."', 4500);
+  await showNarration('"Do you need water? A blanket?"<br>— <strong>HOW ABOUT YOU LET ME GO</strong>', 4000);
+
+  // Twilight backs away
+  animFn = (dt) => {
+    sceneT += dt;
+    twilight.position.z = lerp(twilight.position.z, 3.5, 0.01);
+    faceToward(twilight, 0, 0);
+    animatePonyIdle(twilight, sceneT);
+    anon.rotation.z = Math.sin(sceneT*3)*0.04;
+    labLight.intensity = 2.5 + Math.sin(sceneT*0.7)*0.3;
+    lerpCamera(camera, v3(0.5, 1.8, 3), v3(0, 1.0, 0), 0.008);
+  };
+
+  await showNarration('She mouths "I\'m sorry" and leaves you alone.<br><br>Wait.<br><em>Rope.</em>', 4500);
+  await showNarration('From your time with Ahh Ke Gaa, you\'ve developed an<br><em>intimate understanding</em> of rope.', 4500);
+  await showNarration('Rope wants to move. Every strand shifts. Every knot is a compromise<br>between tension and slack.', 4000);
+  await showNarration('Don\'t fight the rope. <em>Understand</em> it.<br><br>A fraction of movement. Barely anything.', 4000);
+
+  // Remove bindings — he's free
+  scene.remove(bind1.mesh);
+  scene.remove(bind2.mesh);
+  resetAnonPose(anon);
+  anon.position.y = 0;
+
+  await showNarration('You\'ve escaped.<br>You steal a geography book and slip into the night.<br><em>"Natural Ahh Ke Trees."</em>', 5000);
+  await delay(2000);
+  await transitionTo(scene5);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 5: THE FOREST — Approaching the Natural Tree
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout: Dense dark forest. Path leads to a clearing.
+  - Anon at (0, 0, 6), walking TOWARD camera/tree at (0, 0, 0)
+    → He faces -Z (toward tree)
+  - THE tree at (0, 0, 0) with glowing hollow
+  - Dense trees surrounding the clearing
+  
+  Camera starts behind Anon (0, 2.5, 8), then moves to side/front as he approaches
+*/
+async function scene5(){
+  setSceneDot(5);
+  showTitle('Scene VI — The Natural Tree');
+
+  horrorLights();
+
+  // Eerie green ambient
+  const greenAmb = new THREE.AmbientLight(0x0a1a08, 0.6);
+  addLight(greenAmb);
+
+  scene.fog = new THREE.FogExp2(0x020808, 0.05);
+
+  addObj(makeSky(0x000008, 0x000000));
+  addObj(makeGround(0x0a1208));
+
+  // Dense forest ring
+  for(let i=0; i<35; i++){
+    const angle = Math.random()*Math.PI*2;
+    const rad = 6 + Math.random()*12;
+    const t = makeTree(Math.cos(angle)*rad, Math.sin(angle)*rad,
+      3+Math.random()*3, 1.5+Math.random()*2, 0x1a0d00, 0x0a1808);
+    addObj(t);
+  }
+
+  // THE TREE — at origin, special, ominous
+  const treeGroup = new THREE.Group();
+  // Gnarled trunk
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.55, 5.5, 10),
+    new THREE.MeshStandardMaterial({color:0x1a0800, roughness:0.98})
+  );
+  trunk.position.y = 2.75; trunk.castShadow=true;
+  treeGroup.add(trunk);
+
+  // Twisted roots
+  for(let i=0;i<6;i++){
+    const a = i/6*Math.PI*2;
+    const root = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.14, 1.8, 6),
+      new THREE.MeshStandardMaterial({color:0x100600, roughness:0.95})
+    );
+    root.position.set(Math.cos(a)*0.65, 0.4, Math.sin(a)*0.65);
+    root.rotation.z = Math.cos(a)*0.6;
+    root.rotation.x = Math.sin(a)*0.6;
+    root.castShadow = true;
+    treeGroup.add(root);
+  }
+
+  // Crown
+  const crown = new THREE.Mesh(
+    new THREE.SphereGeometry(3, 14, 10),
+    new THREE.MeshStandardMaterial({color:0x081a08, roughness:0.85})
+  );
+  crown.position.y = 7; crown.castShadow=true;
+  treeGroup.add(crown);
+
+  // THE HOLLOW — dark void with eerie glow
+  const hollow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.32, 10, 8),
+    new THREE.MeshStandardMaterial({color:0x000000, emissive:0x000000})
+  );
+  hollow.position.set(0, 3.2, 0.42);
+  hollow.scale.set(0.8, 1, 0.5);
+  treeGroup.add(hollow);
+
+  // Glow from hollow
+  const hollowGlow = new THREE.PointLight(0x22ff22, 3, 8);
+  hollowGlow.position.set(0, 3.2, 0.6);
+  treeGroup.add(hollowGlow);
+
+  addObj(treeGroup);
+
+  // Natural rope — dangling from hollow downward
+  const naturalRopePts = [];
+  for(let i=0;i<10;i++){
+    const t = i/9;
+    naturalRopePts.push(v3(0, lerp(3.2, 0.3, t), 0.45+t*0.3));
+  }
+  const naturalRope = new Rope(naturalRopePts, 0.02, 0x886633, 30);
+  addObj(naturalRope.mesh);
+
+  // Anon — starts far back, walks toward tree
+  const anon = makeAnon(0x333355);
+  anon.position.set(0, 0, 8);
+  faceToward(anon, 0, 0); // face the tree (faces -Z)
+  anon.scale.setScalar(0.9);
+  addObj(anon);
+
+  // Camera starts behind Anon
+  camera.position.set(0, 2.5, 10);
+  camera.userData._look = v3(0, 2, 0);
+  camera.lookAt(0, 2, 0);
+
+  let approachPhase = 0;
+
+  animFn = (dt) => {
+    sceneT += dt;
+
+    if(approachPhase === 0){
+      // Anon walks toward tree
+      anon.position.z = lerp(anon.position.z, 1.5, 0.006);
+      faceToward(anon, 0, 0);
+      animateAnonWalk(anon, sceneT, 3);
+      // Camera follows from behind, then shifts to side
+      const camZ = anon.position.z + 3;
+      const camX = Math.sin(sceneT*0.1) * 2;
+      lerpCamera(camera, v3(camX, 2.5, camZ), v3(0, 3, 0), 0.015);
+    } else {
+      // Close on tree
+      lerpCamera(camera, v3(2, 3, 3), v3(0, 3, 0), 0.01);
+    }
+
+    // Hollow glow pulses
+    hollowGlow.intensity = 3 + Math.sin(sceneT*1.8)*2;
+    hollowGlow.color.setHSL(0.35, 1, 0.4+Math.sin(sceneT*2)*0.1);
+
+    // Rope sways
+    const ropePts = [];
+    for(let i=0;i<10;i++){
+      const t = i/9;
+      ropePts.push(v3(
+        Math.sin(sceneT*0.8+t*2)*0.08,
+        lerp(3.2, 0.3, t),
+        0.45+t*0.3+Math.sin(sceneT*0.6+t*3)*0.04
+      ));
+    }
+    naturalRope.update(ropePts);
+
+    // Roots subtly move
+    treeGroup.children.forEach((c,i) => {
+      if(i>=1 && i<=6) c.rotation.y = Math.sin(sceneT*0.3+i)*0.04;
+    });
+  };
+
+  await showNarration('<em>Natural Ahh Ke Trees.</em><br>Trees that grow with a length of rope already inside.', 4500);
+  await showNarration('Miles out of town. Through forest and bush.<br>The withdrawal shakes driving every step.', 4000);
+
+  approachPhase = 1;
+
+  await showNarration('And there it is.<br>Standing alone in the middle of a grove.', 4500);
+  await showNarration('Midway up — a hollow. Dark, like a window into another world.<br>Extending out: a length of rope, lying in wait.', 5000);
+  await delay(1000);
+
+  playHorrorDrone(6);
+  await showNarration('Something\'s wrong.<br>Go home <strong>NOW</strong>.<br><br>But you silence those thoughts.', 4500);
+  await delay(2000);
+  await transitionTo(scene6);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCENE 6: THE HORROR — Tree consumes Anon
+// ══════════════════════════════════════════════════════════════════
+/*
+  Layout:
+  - Tree at (0, 0, 0), hollow at y≈3.2, facing +Z
+  - Anon at (0, 0, 2), facing tree (facing -Z)
+  - Tendrils (ropes) emerge from hollow and wrap around Anon
+  - Anon gets dragged toward tree, into hollow
+
+  Camera: starts at side (3, 3, 3), moves to dramatic angles
+*/
+async function scene6(){
+  setSceneDot(6);
+  showTitle('Scene VII — The Tree Takes');
+
+  horrorLights();
+  scene.fog = new THREE.FogExp2(0x000000, 0.06);
+
+  const redGlow = new THREE.PointLight(0xff2200, 4, 12);
+  redGlow.position.set(0, 3.2, 0.8);
+  addLight(redGlow);
+
+  const lowAmb = new THREE.AmbientLight(0x0a0204, 1);
+  addLight(lowAmb);
+
+  addObj(makeSky(0x000000, 0x000000));
+  addObj(makeGround(0x050804));
+
+  // Sparse dark trees in background
+  for(let i=0;i<12;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = 8+Math.random()*12;
+    addObj(makeTree(Math.cos(a)*r, Math.sin(a)*r, 4+Math.random()*2, 2+Math.random(), 0x0d0500, 0x040d04));
+  }
+
+  // THE TREE — even more menacing
+  const treeGroup = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.65, 6, 10),
+    new THREE.MeshStandardMaterial({color:0x120600, roughness:0.98})
+  );
+  trunk.position.y = 3; trunk.castShadow=true;
+  treeGroup.add(trunk);
+
+  // Writhing roots
+  const roots = [];
+  for(let i=0;i<8;i++){
+    const a = i/8*Math.PI*2;
+    const root = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.18, 2.2, 6),
+      new THREE.MeshStandardMaterial({color:0x0a0400, roughness:0.95})
+    );
+    root.position.set(Math.cos(a)*0.8, 0.3, Math.sin(a)*0.8);
+    root.rotation.z = Math.cos(a)*0.7;
+    root.rotation.x = Math.sin(a)*0.7;
+    root.castShadow=true;
+    treeGroup.add(root);
+    roots.push(root);
+  }
+
+  const crown = new THREE.Mesh(
+    new THREE.SphereGeometry(3.5, 14, 10),
+    new THREE.MeshStandardMaterial({color:0x040d04, roughness:0.85})
+  );
+  crown.position.y = 7.5;
+  treeGroup.add(crown);
+
+  // Hollow — voidlike
+  const hollow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.38, 10, 8),
+    new THREE.MeshStandardMaterial({color:0x000000, emissive:0x110000, emissiveIntensity:0.5})
+  );
+  hollow.position.set(0, 3.2, 0.45);
+  hollow.scale.set(0.8, 1, 0.5);
+  treeGroup.add(hollow);
+
+  addObj(treeGroup);
+
+  // Anon — at (0, 0, 2), facing tree
+  const anon = makeAnon(0x333355);
+  anon.position.set(0, 0, 2);
+  faceToward(anon, 0, 0); // face tree (-Z)
+  anon.scale.setScalar(0.9);
+  addObj(anon);
+
+  // Tendril ropes — initially short, will extend to grab Anon
+  const tendrilCount = 5;
+  const tendrilData = [];
+  for(let i=0;i<tendrilCount;i++){
+    const startPts = [];
+    for(let j=0;j<8;j++){
+      const t = j/7;
+      startPts.push(v3(
+        (Math.random()-0.5)*0.1,
+        3.2,
+        0.45+t*0.1
+      ));
+    }
+    const r = new Rope(startPts, 0.018, 0x553300, 20);
+    addObj(r.mesh);
+    tendrilData.push({
+      rope: r,
+      // Target point on Anon's body
+      targetY: [0.3, 0.7, 1.0, 1.3, 0.5][i],
+      targetXOffset: [-0.3, 0.3, 0, -0.15, 0.15][i],
+      delay: i * 0.3,
+      grabbed: false
+    });
+  }
+
+  camera.position.set(3, 3, 4);
+  camera.userData._look = v3(0, 2, 1);
+  camera.lookAt(0, 2, 1);
+
+  let phase = 0; // 0=singing, 1=grabbed, 2=pulling, 3=consumed
+  let phaseT = 0;
+  let consumed = false;
+
+  animFn = (dt) => {
+    sceneT += dt;
+
+    // Roots always writhe
+    roots.forEach((root, i) => {
+      root.rotation.y = Math.sin(sceneT*1.5+i)*0.2;
+    });
+
+    // Red glow pulses
+    redGlow.intensity = 4 + Math.sin(sceneT*4)*2;
+    redGlow.color.setHSL(lerp(0, 0.06, Math.sin(sceneT*2)*0.5+0.5), 1, 0.5);
+
+    if(phase === 0){
+      // Anon singing, pulling rope toward himself
+      animateAnonPull(anon, sceneT, 0.6);
+      // Camera side view
+      lerpCamera(camera, v3(3, 2.5, 2.5), v3(0, 2, 1), 0.01);
+    }
+    else if(phase === 1){
+      // Tendrils extend and grab
+      phaseT += dt;
+      tendrilData.forEach((td, i) => {
+        const grabT = clamp((phaseT - td.delay) * 0.8, 0, 1);
+        const eased = easeOut(grabT);
+        const pts = [];
+        for(let j=0;j<8;j++){
+          const t = j/7;
+          const sx = (Math.random()-0.5)*0.05;
+          pts.push(v3(
+            lerp(sx, td.targetXOffset*eased, t),
+            lerp(3.2, td.targetY, t*eased),
+            lerp(0.5, anon.position.z, t*eased) + Math.sin(sceneT*3+j)*0.05
+          ));
+        }
+        td.rope.update(pts);
+      });
+      // Anon struggles
+      anon.rotation.z = Math.sin(sceneT*6)*0.15;
+      anon.userData.arms.leftArm.group.rotation.x = Math.sin(sceneT*5)*0.8;
+      anon.userData.arms.rightArm.group.rotation.x = Math.cos(sceneT*5)*0.8;
+      anon.userData.arms.leftArm.group.rotation.z = -0.5+Math.sin(sceneT*4)*0.3;
+      anon.userData.arms.rightArm.group.rotation.z = 0.5-Math.sin(sceneT*4)*0.3;
+      // Camera circles in panic
+      const ca = sceneT*0.5;
+      lerpCamera(camera, v3(Math.cos(ca)*4, 3, Math.sin(ca)*4), v3(0, 2, anon.position.z*0.5), 0.02);
+    }
+    else if(phase === 2){
+      // Being pulled in
+      phaseT += dt;
+      const pullProgress = easeInOut(clamp(phaseT * 0.15, 0, 1));
+
+      anon.position.z = lerp(2, 0.5, pullProgress);
+      anon.position.y = lerp(0, 1.5, pullProgress); // lifted up toward hollow
+      anon.scale.setScalar(lerp(0.9, 0.3, pullProgress)); // compressed
+      anon.rotation.x = lerp(0, -0.8, pullProgress); // arches backward
+      anon.rotation.z = Math.sin(sceneT*8)*0.2*(1-pullProgress);
+
+      // Tendrils tighten to tree
+      tendrilData.forEach((td, i) => {
+        const pts = [];
+        for(let j=0;j<8;j++){
+          const t = j/7;
+          pts.push(v3(
+            lerp(td.targetXOffset*(1-pullProgress), 0, t),
+            lerp(td.targetY, 3.2, t*pullProgress + (1-t)*(1-pullProgress)),
+            lerp(anon.position.z, 0.45, t) + Math.sin(sceneT*4+j+i)*0.03*(1-pullProgress)
+          ));
+        }
+        td.rope.update(pts);
+      });
+
+      // Camera slowly rises, looking down at the horror
+      lerpCamera(camera, v3(1, 5+pullProgress*2, 3-pullProgress), v3(0, 3, 0.5), 0.015);
+
+      if(pullProgress > 0.95 && !consumed){
+        consumed = true;
+        anon.visible = false;
+        // Remove tendrils
+        tendrilData.forEach(td => { td.rope.mesh.visible = false; });
+      }
+    }
+    else if(phase === 3){
+      // Just the tree, silent, with new rope
+      lerpCamera(camera, v3(0, 4, 7), v3(0, 3, 0), 0.005);
+      // Fog slowly clears a bit
+      if(scene.fog) scene.fog.density = lerp(scene.fog.density, 0.03, 0.001);
+    }
+  };
+
+  // Phase 0: Singing
+  playChant(2, 1, 0.1);
+  await showNarration('You pick up the rope. You pull. You sing.<br><em>Ahh Ke Gaa, Luuuu~</em>', 4000);
+  await showNarration('A sense of true peace fills you like never before.<br>Not raw pleasure — something deeper.', 4000);
+
+  // Phase 1: Grabbed
+  phase = 1; phaseT = 0;
+  playHorrorDrone(10);
+  await showNarration('Then you feel the rope wrap around your leg.<br>It grows tight.', 3500);
+  await showNarration('More lengths shoot out from the hollow.<br>All limbs restrained.', 3500);
+  await showNarration('<strong>HELP! SOMEBODY! HEEEELP!</strong><br>Your screams go unheard.', 4000);
+
+  // Phase 2: Pulled in
+  phase = 2; phaseT = 0;
+  playChant(8, 0.3, 0.2);
+  await showNarration('The ropes pull you toward the tree.<br>Closer. And closer.', 4000);
+  await showNarration('Your back arches. Your limbs flail uselessly.<br><strong>AAAAAHHHH—</strong>', 4000);
+
+  // Wait for consumption
+  await delay(3000);
+
+  // Phase 3: The chorus
+  phase = 3; phaseT = 0;
+  playChant(10, 0.2, 0.25);
+
+  await showNarration('In your final moments — a chorus of thousands.<br><br><em>"Ahh... Ke... Gaa... Luu..."</em>', 6000);
+
+  // Show the new rope emerging
+  const newRopePts = [];
+  for(let i=0;i<10;i++){
+    const t = i/9;
+    newRopePts.push(v3(0, lerp(3.2, 0.3, t), 0.45+t*0.3));
+  }
+  const newRope = new Rope(newRopePts, 0.02, 0x886633, 30);
+  addObj(newRope.mesh);
+
+  // Change glow to calm green
+  redGlow.color.set(0x22aa22);
+  redGlow.intensity = 1.5;
+
+  const oldAnimFn = animFn;
+  animFn = (dt) => {
+    sceneT += dt;
+    oldAnimFn(dt);
+    // New rope sways gently
+    const pts = [];
+    for(let i=0;i<10;i++){
+      const t = i/9;
+      pts.push(v3(
+        Math.sin(sceneT*0.6+t*2)*0.06,
+        lerp(3.2, 0.3, t),
+        0.45+t*0.3+Math.sin(sceneT*0.4+t)*0.03
+      ));
+    }
+    newRope.update(pts);
+    redGlow.intensity = 1.5 + Math.sin(sceneT*1.2)*0.5;
+  };
+
+  await showNarration('The tree takes you into itself.<br>The world goes black.', 4500);
+  await delay(2000);
+  await showNarration('The lone tree shoots out a single line of rope.<br>A subtle hum fills the forest as a soft wind blows.', 5000);
+  await delay(1500);
+
+  // Final: Happy Halloween
+  await fadeToBlack(2000);
+  document.getElementById('halloween').style.opacity = '1';
+  await delay(4000);
+  document.getElementById('halloween').style.opacity = '0';
+  await fadeFromBlack(2000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MAIN LOOP + START
+// ══════════════════════════════════════════════════════════════════
+let lastTime = 0;
+let started = false;
+
+function animate(time){
+  requestAnimationFrame(animate);
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+  if(started) animFn(dt);
+  renderer.render(scene, camera);
+}
+animate(0);
+
+async function begin(){
+  document.getElementById('start-screen').style.display = 'none';
+  initAudio();
+  started = true;
+  await fadeFromBlack(1500);
+  await scene0();
+}
+</script>
+</body>
+</html>
