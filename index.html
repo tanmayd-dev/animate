@@ -6,162 +6,174 @@
 <title>Ahh Ke Gaa — An Animated Story</title>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #050508;
+  html, body {
+    width: 100%; height: 100%;
+    background: #020205;
     color: #e0e0e0;
     font-family: 'Georgia', 'Palatino Linotype', serif;
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    width: 100vw;
-    height: 100vh;
   }
-  canvas { display: block; width: 100%; height: 100%; outline: none; }
+  canvas#webgl {
+    display: block; width: 100%; height: 100%; outline: none;
+  }
 
-  /* ── Overlays & Screen Effects ── */
+  /* ── 2.39:1 Anamorphic Cinematic Letterbox ── */
+  .letterbox {
+    position: fixed; left: 0; width: 100%;
+    background: #000002; z-index: 15;
+    pointer-events: none; transition: height 0.6s ease;
+  }
+  #letterbox-top { top: 0; height: calc((100vh - (100vw / 2.39)) / 2); min-height: 40px; }
+  #letterbox-bottom { bottom: 0; height: calc((100vh - (100vw / 2.39)) / 2); min-height: 40px; }
+
+  /* ── Atmospheric Screen Shaders / Overlays ── */
   #fade-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: #000; pointer-events: none; z-index: 10;
+    background: #000; pointer-events: none; z-index: 40;
     opacity: 1; transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
   #flash-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: radial-gradient(circle, #fff7d0 0%, #ffaa33 45%, #ff4400 90%);
-    pointer-events: none; z-index: 9;
+    background: radial-gradient(circle, #fffbe0 0%, #ffbb44 40%, #ff4400 85%, #000 100%);
+    pointer-events: none; z-index: 35;
     opacity: 0; mix-blend-mode: screen;
-    transition: opacity 0.5s ease;
+    transition: opacity 0.4s ease;
   }
-  #horror-vignette {
+  #vignette-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    box-shadow: inset 0 0 120px rgba(180, 0, 0, 0.6), inset 0 0 250px rgba(0, 0, 0, 0.95);
-    pointer-events: none; z-index: 8;
-    opacity: 0; transition: opacity 0.8s ease;
+    box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.8), inset 0 0 200px rgba(0, 0, 0, 0.95);
+    pointer-events: none; z-index: 20;
+    transition: box-shadow 0.8s ease;
+  }
+  #vignette-overlay.horror {
+    box-shadow: inset 0 0 120px rgba(180, 0, 0, 0.5), inset 0 0 280px rgba(0, 0, 0, 0.98);
   }
 
-  /* ── Top Bar / HUD ── */
+  /* ── Cinematic HUD (Top) ── */
   #hud-top {
-    position: fixed; top: 20px; left: 0; width: 100%;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-    z-index: 20; pointer-events: none;
+    position: fixed; top: 16px; left: 0; width: 100%;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    z-index: 30; pointer-events: none;
   }
-  #scene-chapter {
-    font-size: 0.75rem; letter-spacing: 5px; text-transform: uppercase;
-    color: #ffaa44; text-shadow: 0 0 12px rgba(255, 170, 68, 0.6);
+  #chapter-tag {
+    font-size: 0.72rem; letter-spacing: 5px; text-transform: uppercase;
+    color: #ffaa44; text-shadow: 0 0 10px rgba(255, 170, 68, 0.6);
   }
-  #scene-heading {
-    font-size: 1.35rem; letter-spacing: 3px; font-weight: normal;
-    color: #ffffff; text-shadow: 0 2px 8px rgba(0,0,0,0.9), 0 0 25px rgba(255, 136, 0, 0.35);
+  #scene-title {
+    font-size: 1.25rem; letter-spacing: 3px; font-weight: normal;
+    color: #ffffff; text-shadow: 0 2px 8px rgba(0,0,0,0.9), 0 0 20px rgba(255, 136, 0, 0.4);
   }
   #chapter-dots {
     display: flex; gap: 8px; margin-top: 4px; pointer-events: auto;
   }
   .ch-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
     border: 1px solid rgba(255, 255, 255, 0.4);
     cursor: pointer; transition: all 0.3s ease;
   }
   .ch-dot:hover { background: #ffaa44; transform: scale(1.3); }
   .ch-dot.active {
-    background: #ffaa44; border-color: #ffe6a0;
-    box-shadow: 0 0 10px #ffaa00; transform: scale(1.35);
+    background: #ffaa44; border-color: #ffe8aa;
+    box-shadow: 0 0 12px #ffaa00; transform: scale(1.35);
   }
 
-  /* ── Quick Controls in Top Right ── */
+  /* ── Action Buttons (Top Right) ── */
   #hud-actions {
-    position: fixed; top: 20px; right: 24px;
-    display: flex; gap: 10px; z-index: 25;
+    position: fixed; top: 18px; right: 24px;
+    display: flex; gap: 10px; z-index: 32;
   }
   .hud-btn {
-    background: rgba(12, 12, 20, 0.65);
+    background: rgba(12, 12, 20, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #ddd; font-family: inherit; font-size: 0.8rem;
+    color: #ddd; font-family: inherit; font-size: 0.75rem;
     letter-spacing: 1.5px; text-transform: uppercase;
-    padding: 7px 14px; border-radius: 4px;
+    padding: 6px 14px; border-radius: 4px;
     cursor: pointer; backdrop-filter: blur(8px);
     transition: all 0.25s ease;
   }
-  .hud-btn:hover { background: rgba(255, 170, 68, 0.25); border-color: #ffaa44; color: #fff; }
+  .hud-btn:hover { background: rgba(255, 170, 68, 0.3); border-color: #ffaa44; color: #fff; }
   .hud-btn.active { background: #ffaa44; border-color: #ffaa44; color: #111; font-weight: bold; }
 
-  /* ── Narrative Subtitle Box ── */
-  #narration-container {
-    position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%);
-    width: 92%; max-width: 820px; min-height: 100px;
-    background: rgba(10, 10, 16, 0.82);
-    backdrop-filter: blur(12px);
+  /* ── Narrative Subtitle Card (Bottom) ── */
+  #subtitles-card {
+    position: fixed; bottom: calc(((100vh - (100vw / 2.39)) / 2) + 16px);
+    left: 50%; transform: translateX(-50%);
+    width: 90%; max-width: 800px; min-height: 90px;
+    background: rgba(8, 8, 14, 0.85);
+    backdrop-filter: blur(14px);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 150, 50, 0.08);
-    padding: 16px 28px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.85), 0 0 25px rgba(255, 150, 50, 0.08);
+    padding: 14px 26px;
     display: flex; flex-direction: column; justify-content: center;
-    z-index: 20; pointer-events: none;
+    z-index: 30; pointer-events: none;
     transition: opacity 0.4s ease;
   }
   #speaker-badge {
-    font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase;
-    margin-bottom: 6px; font-weight: bold;
+    font-size: 0.75rem; letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 5px; font-weight: bold;
   }
-  #narration-text {
-    font-size: 1.15rem; line-height: 1.65; color: #f0f0f0;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  #subtitle-text {
+    font-size: 1.1rem; line-height: 1.6; color: #f2f2f2;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
   }
-  #narration-text em { color: #ffe6a0; font-style: normal; }
-  #narration-text strong { color: #ff8844; font-weight: 600; }
+  #subtitle-text em { color: #ffe6a0; font-style: normal; }
+  #subtitle-text strong { color: #ff8844; font-weight: 600; }
   .sp-pinkie    { color: #ff66cc; }
   .sp-rainbow   { color: #44bbff; }
   .sp-applejack { color: #ffaa33; }
   .sp-twilight  { color: #c678dd; }
-  .sp-redheart  { color: #ff5566; }
   .sp-anon      { color: #70d688; }
-  .sp-cmc       { color: #ffd166; }
   .sp-story     { color: #b0c4de; font-style: italic; }
   .sp-tree      { color: #ff3333; text-shadow: 0 0 10px #ff0000; }
 
-  /* ── Playback Controls Bottom Bar ── */
+  /* ── Playback Bar (Inside Bottom Letterbox) ── */
   #playback-bar {
-    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
     display: flex; align-items: center; gap: 14px;
     background: rgba(12, 12, 18, 0.75);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 8px 22px; border-radius: 30px;
-    z-index: 25;
+    padding: 6px 20px; border-radius: 24px;
+    z-index: 32;
   }
   .ctrl-btn {
     background: none; border: none; color: #ddd;
-    font-size: 1.05rem; cursor: pointer; padding: 4px 8px;
+    font-size: 1rem; cursor: pointer; padding: 4px 6px;
     transition: all 0.2s;
   }
   .ctrl-btn:hover { color: #ffaa44; transform: scale(1.15); }
   #time-display {
-    font-family: monospace; font-size: 0.85rem; color: #8899aa; letter-spacing: 1px;
+    font-family: monospace; font-size: 0.8rem; color: #8899aa; letter-spacing: 1px;
   }
   #free-cam-hint {
-    position: fixed; bottom: 24px; left: 24px;
-    font-size: 0.75rem; letter-spacing: 1.5px; text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.4); z-index: 20; pointer-events: none;
+    position: fixed; bottom: 16px; left: 24px;
+    font-size: 0.72rem; letter-spacing: 1.5px; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4); z-index: 30; pointer-events: none;
   }
 
-  /* ── Start Screen / Splash ── */
+  /* ── Start Splash Screen ── */
   #splash-screen {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: radial-gradient(ellipse at 50% 40%, #151522 0%, #050509 70%, #000 100%);
+    background: radial-gradient(ellipse at 50% 45%, #181826 0%, #06060c 65%, #000 100%);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    z-index: 100; text-align: center; padding: 20px;
+    z-index: 100; text-align: center; padding: 24px;
     transition: opacity 1.2s ease;
   }
   #splash-screen h1 {
-    font-size: 3.6rem; letter-spacing: 12px; font-weight: normal;
+    font-size: 3.8rem; letter-spacing: 14px; font-weight: normal;
     color: #ffaa44; text-shadow: 0 0 35px rgba(255, 136, 0, 0.6), 0 0 80px rgba(255, 68, 0, 0.3);
     margin-bottom: 8px;
   }
   #splash-screen .sub {
-    font-size: 1.05rem; letter-spacing: 4px; text-transform: uppercase;
-    color: #99aabb; margin-bottom: 40px;
+    font-size: 1.05rem; letter-spacing: 5px; text-transform: uppercase;
+    color: #99aabb; margin-bottom: 35px;
   }
   #splash-screen p {
-    max-width: 580px; font-size: 0.95rem; line-height: 1.7; color: #aaa;
+    max-width: 620px; font-size: 0.95rem; line-height: 1.7; color: #bbb;
     margin-bottom: 45px;
   }
   #btn-start {
@@ -169,50 +181,48 @@
     border: 2px solid #ffaa44;
     color: #ffaa44;
     font-family: inherit; font-size: 1.15rem; letter-spacing: 4px; text-transform: uppercase;
-    padding: 14px 44px; border-radius: 4px; cursor: pointer;
+    padding: 14px 48px; border-radius: 4px; cursor: pointer;
     box-shadow: 0 0 25px rgba(255, 170, 68, 0.25);
     transition: all 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
   }
   #btn-start:hover {
     background: #ffaa44; color: #000;
-    box-shadow: 0 0 45px rgba(255, 170, 68, 0.7);
+    box-shadow: 0 0 45px rgba(255, 170, 68, 0.75);
     transform: translateY(-2px);
   }
 
-  /* ── Halloween Final Card ── */
+  /* ── Halloween Card (Ending) ── */
   #halloween-card {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    text-align: center; z-index: 50; pointer-events: none; opacity: 0;
+    text-align: center; z-index: 60; pointer-events: none; opacity: 0;
     transition: opacity 2.5s ease;
   }
   #halloween-card h2 {
-    font-size: 3.2rem; letter-spacing: 8px; color: #ff5522;
-    text-shadow: 0 0 30px #ff3300, 0 0 70px #990000; margin-bottom: 12px;
+    font-size: 3.4rem; letter-spacing: 10px; color: #ff5522;
+    text-shadow: 0 0 30px #ff3300, 0 0 70px #990000; margin-bottom: 14px;
   }
   #halloween-card p {
-    font-size: 1.1rem; letter-spacing: 3px; color: #cc8866;
+    font-size: 1.15rem; letter-spacing: 3px; color: #cc8866;
   }
 </style>
 </head>
 <body>
 
-<div id="splash-screen">
-  <h1>AHH KE GAA</h1>
-  <div class="sub">An Equestrian Psychological Horror Story</div>
-  <p>
-    An innocent playground game with a rope and a tree triggers an ungodly chemical ecstasy in human neurochemistry.
-    Experience Anon's manic spiral and the ancient, predatory secret awaiting in the deep woods.
-  </p>
-  <button id="btn-start">▶&ensp;ENTER THE EXPERIENCE</button>
-</div>
+<canvas id="webgl"></canvas>
 
+<!-- Cinematic Letterbox Borders -->
+<div id="letterbox-top" class="letterbox"></div>
+<div id="letterbox-bottom" class="letterbox"></div>
+
+<!-- Overlays -->
 <div id="fade-overlay"></div>
 <div id="flash-overlay"></div>
-<div id="horror-vignette"></div>
+<div id="vignette-overlay"></div>
 
+<!-- HUD -->
 <div id="hud-top">
-  <div id="scene-chapter">ACT I &bull; SCENE 1</div>
-  <div id="scene-heading">A Nice Day in Ponyville</div>
+  <div id="chapter-tag">ACT I &bull; SCENE 1</div>
+  <div id="scene-title">A Nice Day in Ponyville</div>
   <div id="chapter-dots"></div>
 </div>
 
@@ -221,9 +231,9 @@
   <button id="btn-freecam" class="hud-btn" title="Toggle Free Orbit Camera (Press C)">FREE CAM</button>
 </div>
 
-<div id="narration-container">
+<div id="subtitles-card">
   <div id="speaker-badge" class="sp-story">ANON</div>
-  <div id="narration-text">Loading scene...</div>
+  <div id="subtitle-text">Initializing scene...</div>
 </div>
 
 <div id="playback-bar">
@@ -233,32 +243,42 @@
   <span id="time-display">00:00</span>
 </div>
 
-<div id="free-cam-hint">[C] Free Cam / Click & Drag to Orbit &bull; [Space] Pause &bull; [&larr;/&rarr;] Change Scene</div>
+<div id="free-cam-hint">[C] Free Cam / Orbit &bull; [Space] Pause &bull; [&larr;/&rarr;] Change Scene</div>
 
 <div id="halloween-card">
   <h2>🎃 HAPPY HALLOWEEN 🎃</h2>
   <p>The tree waits patiently for the next song...</p>
 </div>
 
+<div id="splash-screen">
+  <h1>AHH KE GAA</h1>
+  <div class="sub">An Equestrian Psychological Horror Story</div>
+  <p>
+    An innocent playground game with a rope and a tree triggers an ungodly chemical ecstasy in human neurochemistry.
+    Experience Anon's manic spiral, public hysteria, and the ancient predatory horror awaiting in the deep woods.
+  </p>
+  <button id="btn-start">▶&ensp;ENTER THE EXPERIENCE</button>
+</div>
+
 <script src="vendor/three.min.js"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════════
-   AHH KE GAA — Comprehensive 3D Animated Production
-   Built for GitHub Pages with 0 external network dependencies.
+   AHH KE GAA — Ground-Up Complete Cinematic Overhaul
+   100% Offline Single File for GitHub Pages
    ═══════════════════════════════════════════════════════════════════ */
 
-// ── THREE.JS SETUP ────────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+// ── THREE.JS CORE ────────────────────────────────────────────────
+const canvas = document.getElementById('webgl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-document.body.appendChild(renderer.domElement);
+renderer.toneMappingExposure = 1.1;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 800);
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 3, 10);
 
 window.addEventListener('resize', () => {
@@ -267,19 +287,14 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
 });
 
-// ── UTILITIES & MATH ──────────────────────────────────────────────
+// ── MATH & INTERPOLATION HELPERS ─────────────────────────────────
 function lerp(a, b, t) { return a + (b - a) * t; }
-function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
-function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+function damp(current, target, lambda, dt) { return lerp(current, target, 1 - Math.exp(-lambda * dt)); }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function v3(x, y, z) { return new THREE.Vector3(x, y, z); }
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function faceToward(obj, tx, tz) {
-  obj.rotation.y = Math.atan2(tx - obj.position.x, tz - obj.position.z);
-}
-
-// Camera Target Helper
+// Free Orbit Camera
 let cameraTarget = v3(0, 1.2, 0);
 let freeCamMode = false;
 let orbitPitch = 0.25;
@@ -306,14 +321,206 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => { isDragging = false; });
 window.addEventListener('wheel', (e) => {
   if (!freeCamMode) return;
-  orbitDist = clamp(orbitDist + e.deltaY * 0.008, 2, 25);
+  orbitDist = clamp(orbitDist + e.deltaY * 0.008, 2, 30);
 });
 
-// ── WEB AUDIO SYNTHESIS & SOUNDTRACK ENGINE ───────────────────────
+// ── PROCEDURAL CANVAS2D TEXTURE GENERATORS ────────────────────────
+const Textures = {
+  // 1. Anime / Cartoon Eyes with Specular Catchlights & Iris Gradients
+  createEyeTexture(irisColor, isDilated = false, isBloodshot = false) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    const ctx = c.getContext('2d');
+
+    // Sclera base (clean or bloodshot)
+    ctx.fillStyle = isBloodshot ? '#ecd5d5' : '#ffffff';
+    ctx.fillRect(0, 0, 256, 256);
+
+    if (isBloodshot) {
+      // Blood vessels
+      ctx.strokeStyle = '#b32424';
+      ctx.lineWidth = 1.8;
+      for (let i = 0; i < 9; i++) {
+        ctx.beginPath();
+        ctx.moveTo(128 + (Math.random() - 0.5) * 80, 128 + (Math.random() - 0.5) * 80);
+        ctx.lineTo(Math.random() * 256, Math.random() * 256);
+        ctx.stroke();
+      }
+    }
+
+    // Iris circle
+    const irisR = isDilated ? 90 : 75;
+    const irisGrad = ctx.createRadialGradient(128, 128, 10, 128, 128, irisR);
+    irisGrad.addColorStop(0, '#ffffff');
+    irisGrad.addColorStop(0.25, irisColor);
+    irisGrad.addColorStop(0.85, irisColor);
+    irisGrad.addColorStop(1, '#050510'); // Dark outer limbal ring
+
+    ctx.fillStyle = irisGrad;
+    ctx.beginPath();
+    ctx.arc(128, 128, irisR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pupil
+    const pupilR = isDilated ? 68 : 34;
+    ctx.fillStyle = '#080812';
+    ctx.beginPath();
+    ctx.arc(128, 128, pupilR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Specular Catchlights (large & small glints)
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(128 - 25, 128 - 25, isDilated ? 10 : 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(128 + 22, 128 + 18, isDilated ? 4 : 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Upper eyelid shadow
+    const lidGrad = ctx.createLinearGradient(0, 0, 0, 90);
+    lidGrad.addColorStop(0, 'rgba(0,0,0,0.4)');
+    lidGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lidGrad;
+    ctx.fillRect(0, 0, 256, 90);
+
+    const tex = new THREE.CanvasTexture(c);
+    return tex;
+  },
+
+  // 2. Weathered Wood Grain
+  createWoodTexture(baseHex, darkHex) {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = baseHex;
+    ctx.fillRect(0, 0, 512, 256);
+
+    ctx.strokeStyle = darkHex;
+    ctx.lineWidth = 2.5;
+    for (let y = 0; y < 256; y += 7) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for (let x = 0; x < 512; x += 30) {
+        const offset = Math.sin(x * 0.02) * 5 + Math.sin(y * 0.1) * 3;
+        ctx.lineTo(x, y + offset);
+      }
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  },
+
+  // 3. Ancient Rough Bark with Deep Furrows
+  createBarkTexture() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#1c1618';
+    ctx.fillRect(0, 0, 512, 512);
+
+    ctx.strokeStyle = '#080608';
+    ctx.lineWidth = 4;
+    for (let x = 0; x < 512; x += 12) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      for (let y = 0; y < 512; y += 40) {
+        ctx.lineTo(x + (Math.sin(y * 0.05 + x) * 8), y);
+      }
+      ctx.stroke();
+    }
+    // Moss stipples
+    ctx.fillStyle = '#2f3d28';
+    for (let i = 0; i < 400; i++) {
+      ctx.fillRect(Math.random() * 512, Math.random() * 512, 4, 4);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  },
+
+  // 4. Cobblestone Flagstone Pavers
+  createCobbleTexture() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#3a3d36'; // Mortar
+    ctx.fillRect(0, 0, 512, 512);
+
+    for (let y = 0; y < 512; y += 64) {
+      const rowOffset = (y / 64) % 2 === 0 ? 0 : 32;
+      for (let x = -32; x < 544; x += 64) {
+        ctx.fillStyle = `hsl(70, 5%, ${24 + Math.random() * 12}%)`;
+        ctx.beginPath();
+        // Rounded stone
+        ctx.roundRect ? ctx.roundRect(x + rowOffset + 4, y + 4, 56, 56, 12) : ctx.rect(x + rowOffset + 4, y + 4, 56, 56);
+        ctx.fill();
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  },
+
+  // 5. Braided Coarse Hemp Rope
+  createRopeTexture(isBloody = false) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = isBloody ? '#6a2824' : '#ba9256';
+    ctx.fillRect(0, 0, 256, 128);
+
+    ctx.strokeStyle = isBloody ? '#401210' : '#7d592b';
+    ctx.lineWidth = 3;
+    for (let x = -128; x < 384; x += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 128, 128);
+      ctx.stroke();
+    }
+    if (isBloody) {
+      ctx.fillStyle = 'rgba(160, 10, 10, 0.75)';
+      for (let i = 0; i < 25; i++) {
+        ctx.beginPath();
+        ctx.arc(Math.random() * 256, Math.random() * 128, 6 + Math.random() * 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+};
+
+// ── COMMON MATERIALS ─────────────────────────────────────────────
+const M = {
+  skinAnon:    new THREE.MeshStandardMaterial({ color: 0xf5cbb0, roughness: 0.65 }),
+  skinSick:    new THREE.MeshStandardMaterial({ color: 0xd2c3ba, roughness: 0.8 }),
+  hairAnon:    new THREE.MeshStandardMaterial({ color: 0x3d2719, roughness: 0.9 }),
+  jacketAnon:  new THREE.MeshStandardMaterial({ color: 0x274a33, roughness: 0.8 }),
+  denimAnon:   new THREE.MeshStandardMaterial({ color: 0x2c3b54, roughness: 0.85 }),
+  sneakerSole: new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.4 }),
+  sneakerUp:   new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.7 }),
+  newspaper:   new THREE.MeshStandardMaterial({ color: 0xf4eedb, roughness: 0.95 }),
+  bloodWet:    new THREE.MeshStandardMaterial({ color: 0x8a0808, roughness: 0.35, metalness: 0.1 }),
+
+  // Environment
+  woodBench:   new THREE.MeshStandardMaterial({ map: Textures.createWoodTexture('#7a4f2d', '#4f2f18'), roughness: 0.7 }),
+  ironDark:    new THREE.MeshStandardMaterial({ color: 0x1f2422, roughness: 0.5, metalness: 0.6 }),
+  cobbleFloor: new THREE.MeshStandardMaterial({ map: Textures.createCobbleTexture(), roughness: 0.9 }),
+  grassLawn:   new THREE.MeshStandardMaterial({ color: 0x488a32, roughness: 0.85 }),
+  treeLeaves:  new THREE.MeshStandardMaterial({ color: 0x3d7b2a, roughness: 0.8 }),
+  barkPark:    new THREE.MeshStandardMaterial({ map: Textures.createBarkTexture(), roughness: 0.9 }),
+  barkDead:    new THREE.MeshStandardMaterial({ map: Textures.createBarkTexture(), color: 0x40383a, roughness: 0.95 }),
+  ropeClean:   new THREE.MeshStandardMaterial({ map: Textures.createRopeTexture(false), roughness: 0.9 }),
+  ropeGory:    new THREE.MeshStandardMaterial({ map: Textures.createRopeTexture(true), roughness: 0.8 }),
+};
+
+// ── PROCEDURAL WEB AUDIO ENGINE ──────────────────────────────────
 let audioCtx = null;
 let masterGain = null;
 let isMuted = false;
-let ambientOsc = null, ambientGain = null;
 
 function initAudio() {
   if (audioCtx) return;
@@ -331,81 +538,86 @@ function setMute(m) {
   document.getElementById('btn-mute').classList.toggle('active', isMuted);
 }
 
-// Procedural Formant Vocal Synthesizer for "Ahh-Ke-Gaa-Luu"
-function playChoirVowel(vowel, pitchHz, duration, volume = 0.15, isEldritch = false) {
+// 4-Formant Vowel Synthesizer ("Ahh", "Ke", "Gaa", "Luu")
+function playVowelFormant(vowel, pitchHz, duration, volume = 0.15, isEldritch = false) {
   if (!audioCtx || isMuted) return;
   const now = audioCtx.currentTime;
-
-  // Formant filter frequencies [F1, F2]
   const formants = {
-    'ahh': [730, 1090],
-    'ke':  [280, 2250],
-    'gaa': [700, 1220],
-    'luu': [320, 850]
-  }[vowel] || [700, 1100];
+    'ahh': [730, 1090, 2440],
+    'ke':  [280, 2250, 2890],
+    'gaa': [700, 1220, 2550],
+    'luu': [320, 850, 2240]
+  }[vowel] || [700, 1100, 2500];
 
   const voiceCount = isEldritch ? 8 : 3;
-  for (let i = 0; i < voiceCount; i++) {
+  for (let v = 0; v < voiceCount; v++) {
     const osc = audioCtx.createOscillator();
-    osc.type = isEldritch ? (i % 2 === 0 ? 'sawtooth' : 'triangle') : 'sawtooth';
-    const detune = (i - voiceCount / 2) * (isEldritch ? 22 : 6);
+    osc.type = isEldritch ? (v % 2 === 0 ? 'sawtooth' : 'triangle') : 'sawtooth';
+    const detune = (v - voiceCount / 2) * (isEldritch ? 24 : 6);
     osc.frequency.setValueAtTime(pitchHz + detune, now);
 
-    // Two parallel bandpass filters per formant
-    const g = audioCtx.createGain();
-    g.gain.setValueAtTime(0, now);
-    g.gain.linearRampToValueAtTime(volume / voiceCount, now + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    // Subtle 5.2 Hz vibrato LFO
+    const lfo = audioCtx.createOscillator();
+    const lfoGain = audioCtx.createGain();
+    lfo.frequency.value = 5.2 + Math.random() * 0.4;
+    lfoGain.gain.value = isEldritch ? 8 : 3.5;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    lfo.start(now);
+    lfo.stop(now + duration);
+
+    const voiceGain = audioCtx.createGain();
+    voiceGain.gain.setValueAtTime(0, now);
+    voiceGain.gain.linearRampToValueAtTime(volume / voiceCount, now + 0.08);
+    voiceGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
     formants.forEach(freq => {
       const bpf = audioCtx.createBiquadFilter();
       bpf.type = 'bandpass';
-      bpf.frequency.setValueAtTime(freq + (isEldritch ? (i*15 - 50) : 0), now);
-      bpf.Q.setValueAtTime(isEldritch ? 4 : 7, now);
+      bpf.frequency.setValueAtTime(freq + (isEldritch ? (v * 20 - 70) : 0), now);
+      bpf.Q.setValueAtTime(isEldritch ? 4.5 : 8, now);
       osc.connect(bpf);
-      bpf.connect(g);
+      bpf.connect(voiceGain);
     });
 
-    g.connect(masterGain);
+    voiceGain.connect(masterGain);
     osc.start(now);
     osc.stop(now + duration + 0.1);
   }
 }
 
-// Procedural Ahh Ke Gaa Chant
-function triggerChantSequence(isEldritch = false, speed = 1.0) {
+function triggerChant(isEldritch = false, speed = 1.0) {
   if (!audioCtx) return;
   const baseFreq = isEldritch ? 110 : 261.63; // A2 vs C4
   const step = 0.55 / speed;
-  const vol = isEldritch ? 0.35 : 0.18;
+  const vol = isEldritch ? 0.38 : 0.2;
 
-  playChoirVowel('ahh', baseFreq, step * 1.1, vol, isEldritch);
-  setTimeout(() => playChoirVowel('ke',  baseFreq * 1.33, step * 0.9, vol, isEldritch), step * 1000);
-  setTimeout(() => playChoirVowel('gaa', baseFreq * 1.18, step * 1.1, vol, isEldritch), step * 2000);
-  setTimeout(() => playChoirVowel('luu', baseFreq * 0.95, step * 2.2, vol, isEldritch), step * 3000);
+  playVowelFormant('ahh', baseFreq, step * 1.1, vol, isEldritch);
+  setTimeout(() => playVowelFormant('ke',  baseFreq * 1.33, step * 0.9, vol, isEldritch), step * 1000);
+  setTimeout(() => playVowelFormant('gaa', baseFreq * 1.18, step * 1.1, vol, isEldritch), step * 2000);
+  setTimeout(() => playVowelFormant('luu', baseFreq * 0.95, step * 2.2, vol, isEldritch), step * 3000);
 }
 
-// Euphoria White-Noise & Angelic Swell
+// Euphoric White/Golden Pad Swell
 function playEuphoriaSwell() {
   if (!audioCtx || isMuted) return;
   const now = audioCtx.currentTime;
-  const chords = [261.63, 329.63, 392.00, 523.25, 659.25];
-  chords.forEach((freq, idx) => {
+  [261.63, 329.63, 392.00, 523.25, 659.25, 783.99].forEach((freq, idx) => {
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(freq, now);
     g.gain.setValueAtTime(0, now);
-    g.gain.linearRampToValueAtTime(0.08, now + 1.2);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 4.5);
+    g.gain.linearRampToValueAtTime(0.07, now + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
     osc.connect(g);
     g.connect(masterGain);
     osc.start(now);
-    osc.stop(now + 4.6);
+    osc.stop(now + 4.9);
   });
 }
 
-// Heartbeat & Insomnia Pulse
+// Low Heartbeat Pulse
 function playHeartbeat() {
   if (!audioCtx || isMuted) return;
   const now = audioCtx.currentTime;
@@ -413,507 +625,529 @@ function playHeartbeat() {
   const g = audioCtx.createGain();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(65, now);
-  osc.frequency.exponentialRampToValueAtTime(35, now + 0.15);
-  g.gain.setValueAtTime(0.4, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+  osc.frequency.exponentialRampToValueAtTime(32, now + 0.16);
+  g.gain.setValueAtTime(0.45, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
   osc.connect(g);
   g.connect(masterGain);
   osc.start(now);
-  osc.stop(now + 0.25);
+  osc.stop(now + 0.26);
 }
 
-// Visceral Bone Snap / Fracture SFX
+// Bone Snap / Fracture SFX
 function playBoneSnap() {
   if (!audioCtx || isMuted) return;
   const now = audioCtx.currentTime;
-  // White noise crack
-  const bufferSize = audioCtx.sampleRate * 0.15;
+  const bufferSize = audioCtx.sampleRate * 0.16;
   const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
   const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.02));
+  for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.025));
   const noise = audioCtx.createBufferSource();
   noise.buffer = buffer;
   const bpf = audioCtx.createBiquadFilter();
   bpf.type = 'bandpass';
-  bpf.frequency.setValueAtTime(1400, now);
-  bpf.Q.setValueAtTime(2, now);
+  bpf.frequency.setValueAtTime(1600, now);
+  bpf.Q.setValueAtTime(2.5, now);
   const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0.6, now);
+  g.gain.setValueAtTime(0.7, now);
   noise.connect(bpf);
   bpf.connect(g);
   g.connect(masterGain);
   noise.start(now);
 
-  // Low punch
   const sub = audioCtx.createOscillator();
   const sg = audioCtx.createGain();
   sub.type = 'sawtooth';
-  sub.frequency.setValueAtTime(120, now);
-  sub.frequency.exponentialRampToValueAtTime(30, now + 0.18);
-  sg.gain.setValueAtTime(0.5, now);
-  sg.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  sub.frequency.setValueAtTime(130, now);
+  sub.frequency.exponentialRampToValueAtTime(30, now + 0.2);
+  sg.gain.setValueAtTime(0.6, now);
+  sg.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
   sub.connect(sg);
   sg.connect(masterGain);
   sub.start(now);
-  sub.stop(now + 0.22);
+  sub.stop(now + 0.24);
 }
 
-// Clock tick SFX
-function playClockTick() {
-  if (!audioCtx || isMuted) return;
-  const now = audioCtx.currentTime;
-  const osc = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(1200, now);
-  osc.frequency.exponentialRampToValueAtTime(200, now + 0.03);
-  g.gain.setValueAtTime(0.12, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
-  osc.connect(g);
-  g.connect(masterGain);
-  osc.start(now);
-  osc.stop(now + 0.04);
-}
+// ── ARTICULATED CHARACTER FACTORIES ──────────────────────────────
 
-// ── MATERIAL PALETTE ──────────────────────────────────────────────
-const M = {
-  skin:       new THREE.MeshStandardMaterial({ color: 0xf6c8a4, roughness: 0.75 }),
-  skinSick:   new THREE.MeshStandardMaterial({ color: 0xd8c2b0, roughness: 0.85 }),
-  hair:       new THREE.MeshStandardMaterial({ color: 0x362214, roughness: 0.9 }),
-  shirtAnon:  new THREE.MeshStandardMaterial({ color: 0x2e5638, roughness: 0.8 }),
-  jeans:      new THREE.MeshStandardMaterial({ color: 0x2b3852, roughness: 0.85 }),
-  shoe:       new THREE.MeshStandardMaterial({ color: 0x1d1a18, roughness: 0.9 }),
-  white:      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }),
-  pupil:      new THREE.MeshStandardMaterial({ color: 0x080811, roughness: 0.3 }),
-  pupilMad:   new THREE.MeshStandardMaterial({ color: 0x770000, roughness: 0.3 }),
-  blood:      new THREE.MeshStandardMaterial({ color: 0x880505, roughness: 0.45, metalness: 0.1 }),
-  bandage:    new THREE.MeshStandardMaterial({ color: 0xeeeedd, roughness: 0.9 }),
-  rope:       new THREE.MeshStandardMaterial({ color: 0xc89b52, roughness: 0.9 }),
-  ropeBloody: new THREE.MeshStandardMaterial({ color: 0x933b28, roughness: 0.8 }),
-  bark:       new THREE.MeshStandardMaterial({ color: 0x4a3220, roughness: 0.95 }),
-  barkDead:   new THREE.MeshStandardMaterial({ color: 0x161214, roughness: 0.95 }),
-  leaves:     new THREE.MeshStandardMaterial({ color: 0x3d7e2e, roughness: 0.75 }),
-  woodPlank:  new THREE.MeshStandardMaterial({ color: 0x6e4726, roughness: 0.85 }),
-  magicGlow:  new THREE.MeshStandardMaterial({ color: 0xd980fa, emissive: 0x9c27b0, emissiveIntensity: 0.8 }),
-};
-
-function ponyMat(col) { return new THREE.MeshStandardMaterial({ color: col, roughness: 0.65 }); }
-function maneMat(col) { return new THREE.MeshStandardMaterial({ color: col, roughness: 0.55 }); }
-
-// ── CHARACTER BUILDERS ───────────────────────────────────────────
-
-// 1. Anon Human Rig
-function makeAnon(shirtColor = 0x2e5638, isShirtless = false, isInjured = false) {
+// 1. Anon Rig (Human with sculpted head, eyelids, fingers, clothes)
+function makeAnonRig(options = {}) {
+  const { isShirtless = false, isInjured = false, isBound = false } = options;
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
 
-  // Torso
-  const torsoMat = isShirtless ? (isInjured ? M.skinSick : M.skin) : new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.8 });
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.52, 0.22), torsoMat);
-  torso.position.y = 1.05;
-  torso.castShadow = true;
-  body.add(torso);
+  const skinMat = isInjured ? M.skinSick : M.skinAnon;
 
-  // Head
+  // Torso / Jacket
+  let torsoMesh;
+  if (!isShirtless) {
+    torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.55, 0.26), M.jacketAnon);
+    // Collar
+    const collar = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.28), M.jacketAnon);
+    collar.position.set(0, 0.28, 0);
+    torsoMesh.add(collar);
+  } else {
+    // Sculpted shirtless torso with pectorals / ribcage
+    torsoMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 0.54, 10), skinMat);
+    if (isInjured) {
+      // Blood smudges on chest
+      const bloodPatch = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.25), M.bloodWet);
+      bloodPatch.position.set(0, 0.05, 0.17);
+      torsoMesh.add(bloodPatch);
+    }
+  }
+  torsoMesh.position.y = 1.05;
+  torsoMesh.castShadow = true;
+  body.add(torsoMesh);
+
+  // Head Group
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 1.5, 0);
   body.add(headGroup);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), isInjured ? M.skinSick : M.skin);
-  head.scale.set(1, 1.08, 0.95);
-  head.castShadow = true;
-  headGroup.add(head);
+  // Sculpted skull & jaw
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 14), skinMat);
+  skull.scale.set(0.95, 1.1, 0.95);
+  skull.castShadow = true;
+  headGroup.add(skull);
 
-  // Hair
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 10), M.hair);
-  hair.scale.set(1.03, 0.65, 1.04);
-  hair.position.set(0, 0.07, -0.01);
-  headGroup.add(hair);
+  const jaw = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.16, 6), skinMat);
+  jaw.position.set(0, -0.1, 0.05);
+  jaw.rotation.x = 0.4;
+  headGroup.add(jaw);
 
-  // Eyes
-  const eyeMat = isInjured ? M.pupilMad : M.pupil;
-  [-0.055, 0.055].forEach(x => {
-    const eyeW = new THREE.Mesh(new THREE.SphereGeometry(0.034, 8, 6), M.white);
-    eyeW.position.set(x, 0.02, 0.135);
-    headGroup.add(eyeW);
+  // Layered swept hair locks
+  const hairRoot = new THREE.Group();
+  const hairMain = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), M.hairAnon);
+  hairMain.scale.set(1.02, 0.65, 1.04);
+  hairMain.position.set(0, 0.08, -0.01);
+  hairRoot.add(hairMain);
+  // Front hair tuft
+  const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 5), M.hairAnon);
+  tuft.position.set(0.04, 0.14, 0.12);
+  tuft.rotation.x = -1.2;
+  hairRoot.add(tuft);
+  headGroup.add(hairRoot);
 
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), eyeMat);
-    pupil.position.set(x, 0.02, 0.156);
-    headGroup.add(pupil);
+  // Eyes (Using procedural Canvas2D eye texture)
+  const eyeTex = Textures.createEyeTexture('#557766', isInjured, isInjured);
+  const eyeMat = new THREE.MeshBasicMaterial({ map: eyeTex });
+  const eyes = [];
+  [-0.055, 0.055].forEach((x, i) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.038, 12, 10), eyeMat);
+    eye.position.set(x, 0.02, 0.138);
+    eye.rotation.y = i === 0 ? 0.08 : -0.08;
+    headGroup.add(eye);
+    eyes.push(eye);
   });
 
-  // Arms
+  // Animated Eyebrows
+  const eyebrows = [];
+  [-0.055, 0.055].forEach(x => {
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.012), M.hairAnon);
+    brow.position.set(x, 0.065, 0.155);
+    headGroup.add(brow);
+    eyebrows.push(brow);
+  });
+
+  // Arms & Modeled Hands with Fingers
   const arms = {};
-  [{ name: 'leftArm', x: -0.24 }, { name: 'rightArm', x: 0.24 }].forEach(({ name, x }) => {
+  [{ name: 'leftArm', x: -0.26 }, { name: 'rightArm', x: 0.26 }].forEach(({ name, x }) => {
     const armGroup = new THREE.Group();
-    armGroup.position.set(x, 1.28, 0);
+    armGroup.position.set(x, 1.3, 0);
     body.add(armGroup);
 
-    const armUpperMat = isShirtless ? (isInjured ? M.skinSick : M.skin) : torsoMat;
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.32, 8), armUpperMat);
-    upper.position.y = -0.16;
-    upper.castShadow = true;
-    armGroup.add(upper);
+    const upperMat = isShirtless ? skinMat : M.jacketAnon;
+    const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.32, 8), upperMat);
+    upperArm.position.y = -0.16;
+    upperArm.castShadow = true;
+    armGroup.add(upperArm);
 
     const forearmGroup = new THREE.Group();
     forearmGroup.position.set(0, -0.32, 0);
     armGroup.add(forearmGroup);
 
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.28, 8), isInjured ? M.skinSick : M.skin);
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.038, 0.28, 8), skinMat);
     forearm.position.y = -0.14;
     forearm.castShadow = true;
     forearmGroup.add(forearm);
 
-    // Hand (optionally bloody or bandaged)
-    let handMat = isInjured ? (isShirtless ? M.blood : M.bandage) : M.skin;
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.052, 8, 8), handMat);
-    hand.position.y = -0.3;
-    hand.castShadow = true;
-    forearmGroup.add(hand);
+    // Hand palm
+    const handMat = isInjured ? (isShirtless ? M.bloodWet : M.skinSick) : skinMat;
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.03), handMat);
+    palm.position.y = -0.3;
+    palm.castShadow = true;
+    forearmGroup.add(palm);
 
-    arms[name] = { group: armGroup, forearm: forearmGroup, hand };
+    // Fingers
+    const fingers = [];
+    for (let f = 0; f < 4; f++) {
+      const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.007, 0.045, 6), handMat);
+      finger.position.set(-0.02 + f * 0.013, -0.048, 0);
+      palm.add(finger);
+      fingers.push(finger);
+    }
+
+    arms[name] = { group: armGroup, forearm: forearmGroup, palm, fingers };
   });
 
-  // Legs
+  // Legs with jeans and sculpted sneakers
   const legs = {};
-  [{ name: 'leftLeg', x: -0.1 }, { name: 'rightLeg', x: 0.1 }].forEach(({ name, x }) => {
+  [{ name: 'leftLeg', x: -0.11 }, { name: 'rightLeg', x: 0.11 }].forEach(({ name, x }) => {
     const legGroup = new THREE.Group();
     legGroup.position.set(x, 0.78, 0);
     root.add(legGroup);
 
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.38, 8), M.jeans);
-    upper.position.y = -0.19;
-    upper.castShadow = true;
-    legGroup.add(upper);
+    const upperLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.055, 0.4, 8), M.denimAnon);
+    upperLeg.position.y = -0.2;
+    upperLeg.castShadow = true;
+    legGroup.add(upperLeg);
 
     const lowerGroup = new THREE.Group();
-    lowerGroup.position.set(0, -0.38, 0);
+    lowerGroup.position.set(0, -0.4, 0);
     legGroup.add(lowerGroup);
 
-    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.048, 0.36, 8), M.jeans);
-    lower.position.y = -0.18;
-    lower.castShadow = true;
-    lowerGroup.add(lower);
+    const lowerLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.046, 0.38, 8), M.denimAnon);
+    lowerLeg.position.y = -0.19;
+    lowerLeg.castShadow = true;
+    lowerGroup.add(lowerLeg);
 
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.065, 0.17), M.shoe);
-    shoe.position.set(0, -0.38, 0.035);
-    shoe.castShadow = true;
-    lowerGroup.add(shoe);
+    // Detailed Sneaker
+    const sneaker = new THREE.Group();
+    sneaker.position.set(0, -0.4, 0.04);
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.03, 0.19), M.sneakerSole);
+    sneaker.add(sole);
+    const shoeUpper = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.16), M.sneakerUp);
+    shoeUpper.position.set(0, 0.04, -0.01);
+    sneaker.add(shoeUpper);
+    lowerGroup.add(sneaker);
 
-    legs[name] = { group: legGroup, lower: lowerGroup, shoe };
+    legs[name] = { group: legGroup, lower: lowerGroup, sneaker };
   });
 
-  root.userData = { body, headGroup, arms, legs, type: 'anon' };
+  root.userData = { body, headGroup, eyebrows, eyes, arms, legs, type: 'anon' };
   return root;
 }
 
-// 2. Pony Rig (Customizable species, accessories, and cutie marks)
-function makePony(cfg) {
+// 2. Pony Rig (Sculpted organic equine head, muzzle, large animated eyes, multi-layer hair)
+function makePonyRig(cfg) {
   const {
     bodyColor = 0xffaacc,
     maneColor = 0xff3399,
-    tailColor = null,
-    eyeColor = 0x3388ff,
+    eyeColorHex = '#3388ff',
     isPegasus = false,
     isAlicorn = false,
     hasHat = false,
     scale = 1.0
   } = cfg;
 
-  const bm = ponyMat(bodyColor);
-  const mm = maneMat(maneColor);
-  const tm = maneMat(tailColor || maneColor);
-
   const root = new THREE.Group();
   root.scale.set(scale, scale, scale);
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6 });
+  const maneMat = new THREE.MeshStandardMaterial({ color: maneColor, roughness: 0.5 });
 
   const bodyGroup = new THREE.Group();
   root.add(bodyGroup);
 
-  // Barrel / Torso
-  const barrel = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), bm);
-  barrel.scale.set(0.24, 0.22, 0.38);
-  barrel.position.set(0, 0.55, 0);
+  // Arched barrel body
+  const barrel = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 14), bodyMat);
+  barrel.scale.set(0.26, 0.24, 0.42);
+  barrel.position.set(0, 0.56, 0);
   barrel.castShadow = true;
   bodyGroup.add(barrel);
 
-  // Neck
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 0.26, 8), bm);
-  neck.position.set(0, 0.72, 0.28);
+  // Curved neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.13, 0.32, 10), bodyMat);
+  neck.position.set(0, 0.76, 0.28);
   neck.rotation.x = -0.55;
   bodyGroup.add(neck);
 
-  // Head Group
+  // Sculpted Head & Muzzle
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 0.86, 0.42);
+  headGroup.position.set(0, 0.94, 0.44);
   bodyGroup.add(headGroup);
 
-  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 12), bm);
-  headMesh.scale.set(0.9, 0.9, 1.0);
-  headMesh.castShadow = true;
-  headGroup.add(headMesh);
+  const headSkull = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 14), bodyMat);
+  headSkull.scale.set(0.92, 0.95, 1.05);
+  headSkull.castShadow = true;
+  headGroup.add(headSkull);
 
-  // Muzzle / Snout
-  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), bm);
-  muzzle.scale.set(0.8, 0.6, 1.15);
-  muzzle.position.set(0, -0.045, 0.13);
+  // Tapered soft muzzle
+  const muzzle = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.16, 8), bodyMat);
+  muzzle.position.set(0, -0.05, 0.16);
+  muzzle.rotation.x = 1.35;
   headGroup.add(muzzle);
 
-  // Large Eyes
+  // Large Expressive Eyes (Procedural Canvas2D)
+  const eyeTex = Textures.createEyeTexture(eyeColorHex, false, false);
+  const eyeMat = new THREE.MeshBasicMaterial({ map: eyeTex });
   [-1, 1].forEach(side => {
-    const eyeW = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 8), M.white);
-    eyeW.scale.set(0.65, 1, 0.5);
-    eyeW.position.set(side * 0.1, 0.03, 0.1);
-    headGroup.add(eyeW);
-
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshStandardMaterial({ color: eyeColor }));
-    iris.position.set(side * 0.102, 0.03, 0.132);
-    headGroup.add(iris);
-
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 4), M.pupil);
-    pupil.position.set(side * 0.103, 0.03, 0.148);
-    headGroup.add(pupil);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), eyeMat);
+    eye.scale.set(0.65, 1.0, 0.55);
+    eye.position.set(side * 0.1, 0.04, 0.11);
+    eye.rotation.y = side * 0.25;
+    headGroup.add(eye);
   });
 
-  // Ears
+  // Emotive Animated Ears
+  const ears = {};
   [-1, 1].forEach(side => {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.11, 6), bm);
-    ear.position.set(side * 0.09, 0.18, 0.02);
-    ear.rotation.z = side * 0.25;
-    ear.rotation.x = -0.1;
-    headGroup.add(ear);
+    const earGroup = new THREE.Group();
+    earGroup.position.set(side * 0.09, 0.19, 0.02);
+    headGroup.add(earGroup);
+
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.12, 6), bodyMat);
+    ear.rotation.z = side * 0.28;
+    ear.rotation.x = -0.15;
+    earGroup.add(ear);
+    ears[side === -1 ? 'left' : 'right'] = earGroup;
   });
 
-  // Mane Top & Back
-  const maneTop = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), mm);
-  maneTop.scale.set(0.8, 0.9, 1.3);
-  maneTop.position.set(0, 0.14, 0.03);
-  headGroup.add(maneTop);
+  // Layered Curved Mane
+  const maneGroup = new THREE.Group();
+  const maneForelock = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), maneMat);
+  maneForelock.scale.set(0.7, 0.8, 1.4);
+  maneForelock.position.set(0, 0.15, 0.04);
+  maneGroup.add(maneForelock);
 
-  const maneBack = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 0.32, 8), mm);
-  maneBack.position.set(0, 0.74, 0.2);
+  const maneBack = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.14, 0.38, 8), maneMat);
+  maneBack.position.set(0, 0.76, 0.2);
   maneBack.rotation.x = 0.2;
   bodyGroup.add(maneBack);
+  headGroup.add(maneGroup);
 
-  // Tail
+  // Swishing Tail
   const tailGroup = new THREE.Group();
-  tailGroup.position.set(0, 0.58, -0.38);
+  tailGroup.position.set(0, 0.62, -0.42);
   bodyGroup.add(tailGroup);
-  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.09, 0.42, 8), tm);
-  tail.position.set(0, -0.16, -0.08);
-  tail.rotation.x = 0.45;
-  tailGroup.add(tail);
+  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.1, 0.46, 8), maneMat);
+  tailMesh.position.set(0, -0.18, -0.1);
+  tailMesh.rotation.x = 0.5;
+  tailGroup.add(tailMesh);
 
-  // Accessories: Hat (Applejack)
+  // Accessories: Stetson Hat (Applejack)
   if (hasHat) {
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.02, 12), M.woodPlank);
-    brim.position.set(0, 0.2, 0.02);
-    headGroup.add(brim);
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.14, 10), M.woodPlank);
-    crown.position.set(0, 0.27, 0.02);
-    headGroup.add(crown);
+    const hat = new THREE.Group();
+    hat.position.set(0, 0.22, 0.02);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.02, 14), M.woodBench);
+    hat.add(brim);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.16, 12), M.woodBench);
+    crown.position.y = 0.08;
+    hat.add(crown);
+    headGroup.add(hat);
   }
 
-  // Accessories: Alicorn / Unicorn Horn
+  // Accessories: Glowing Alicorn Horn (Twilight Sparkle)
   let horn = null;
   if (isAlicorn) {
-    horn = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.22, 8), bm);
-    horn.position.set(0, 0.22, 0.14);
+    horn = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.24, 8), new THREE.MeshStandardMaterial({
+      color: 0xdf8aff, emissive: 0x9c27b0, emissiveIntensity: 0.9
+    }));
+    horn.position.set(0, 0.24, 0.15);
     horn.rotation.x = 0.35;
     headGroup.add(horn);
   }
 
-  // Accessories: Wings (Pegasus)
+  // Accessories: Layered Pegasus Wings (Rainbow Dash)
   const wings = {};
   if (isPegasus || isAlicorn) {
     [-1, 1].forEach(side => {
       const wg = new THREE.Group();
-      wg.position.set(side * 0.22, 0.65, 0.05);
+      wg.position.set(side * 0.24, 0.68, 0.05);
       bodyGroup.add(wg);
 
-      const wingFeather = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.26), bm);
-      wingFeather.position.set(side * 0.04, 0.04, -0.06);
+      const wingFeather = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.3), bodyMat);
+      wingFeather.position.set(side * 0.05, 0.05, -0.08);
       wg.add(wingFeather);
       wings[side === -1 ? 'left' : 'right'] = wg;
     });
   }
 
-  // Legs (4 limbs pivoted at shoulder/hip)
+  // Articulated Quadruped Legs with distinct hooves
   const legs = {};
   [
-    { name: 'fl', x: -0.11, z: 0.2 },
-    { name: 'fr', x: 0.11, z: 0.2 },
-    { name: 'rl', x: -0.11, z: -0.2 },
-    { name: 'rr', x: 0.11, z: -0.2 },
+    { name: 'fl', x: -0.12, z: 0.22 },
+    { name: 'fr', x: 0.12, z: 0.22 },
+    { name: 'rl', x: -0.12, z: -0.22 },
+    { name: 'rr', x: 0.12, z: -0.22 },
   ].forEach(({ name, x, z }) => {
     const lg = new THREE.Group();
-    lg.position.set(x, 0.36, z);
+    lg.position.set(x, 0.38, z);
     bodyGroup.add(lg);
 
-    const legUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.035, 0.36, 8), bm);
-    legUpper.position.y = -0.18;
+    const legUpper = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.038, 0.38, 8), bodyMat);
+    legUpper.position.y = -0.19;
     legUpper.castShadow = true;
     lg.add(legUpper);
+
+    // Hoof
+    const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.08, 8), M.ironDark);
+    hoof.position.y = -0.37;
+    lg.add(hoof);
 
     legs[name] = lg;
   });
 
-  root.userData = { bodyGroup, headGroup, tailGroup, legs, wings, horn, type: 'pony' };
+  root.userData = { bodyGroup, headGroup, ears, wings, tailGroup, horn, legs, type: 'pony' };
   return root;
 }
 
-// 3. Environmental Objects
-function makeGround(color = 0x4a8c38, size = 120) {
-  const geo = new THREE.PlaneGeometry(size, size, 16, 16);
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-function makeParkTree(x, z, height = 3.5, radius = 1.6) {
-  const grp = new THREE.Group();
-  grp.position.set(x, 0, z);
-
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.32, height, 8), M.bark);
-  trunk.position.y = height / 2;
-  trunk.castShadow = true;
-  grp.add(trunk);
-
-  const crown = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 10), M.leaves);
-  crown.position.y = height + radius * 0.6;
-  crown.scale.set(1, 1.25, 1);
-  crown.castShadow = true;
-  grp.add(crown);
-
-  return grp;
-}
-
-function makeParkBench(x, z) {
-  const grp = new THREE.Group();
-  grp.position.set(x, 0, z);
-
-  // Seat planks
-  for (let i = 0; i < 3; i++) {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.15), M.woodPlank);
-    p.position.set(0, 0.46, -0.15 + i * 0.16);
-    p.castShadow = true;
-    grp.add(p);
-  }
-  // Backrest planks
-  for (let i = 0; i < 2; i++) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.14, 0.04), M.woodPlank);
-    b.position.set(0, 0.72 + i * 0.16, -0.28);
-    b.castShadow = true;
-    grp.add(b);
-  }
-  // Legs
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x1f2421, roughness: 0.6 });
-  [-0.7, 0.7].forEach(lx => {
-    const legF = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.46, 0.06), legMat);
-    legF.position.set(lx, 0.23, 0.14);
-    grp.add(legF);
-    const legB = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.95, 0.06), legMat);
-    legB.position.set(lx, 0.475, -0.28);
-    grp.add(legB);
-  });
-
-  return grp;
-}
-
-// Newspaper Prop
-function makeNewspaper() {
-  const grp = new THREE.Group();
-  const pageMat = new THREE.MeshStandardMaterial({ color: 0xe8e4d8, roughness: 0.9 });
-  const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.44, 0.005), pageMat);
-  p1.position.set(-0.15, 0, 0);
-  p1.rotation.y = 0.2;
-  grp.add(p1);
-  const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.44, 0.005), pageMat);
-  p2.position.set(0.15, 0, 0);
-  p2.rotation.y = -0.2;
-  grp.add(p2);
-  return grp;
-}
-
-// 4. The Monstrous Natural Predator Tree
-function makePredatorTree() {
-  const grp = new THREE.Group();
-
-  // Gnarled, massive trunk
-  const trunkGeo = new THREE.CylinderGeometry(0.7, 1.4, 7.5, 14, 8);
-  const trunk = new THREE.Mesh(trunkGeo, M.barkDead);
-  trunk.position.y = 3.75;
-  trunk.castShadow = true;
-  grp.add(trunk);
-
-  // Sprawling twisted roots
-  for (let i = 0; i < 7; i++) {
-    const angle = (i / 7) * Math.PI * 2;
-    const rootMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.38, 3.2, 8), M.barkDead);
-    rootMesh.position.set(Math.cos(angle) * 1.5, 0.4, Math.sin(angle) * 1.5);
-    rootMesh.rotation.z = Math.PI / 2.8;
-    rootMesh.rotation.y = -angle;
-    grp.add(rootMesh);
-  }
-
-  // The Abyssal Hollow Opening (Midway up the trunk, facing +Z)
-  const hollowRim = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.16, 10, 16), M.barkDead);
-  hollowRim.position.set(0, 3.2, 0.85);
-  grp.add(hollowRim);
-
-  const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  const voidHole = new THREE.Mesh(new THREE.CircleGeometry(0.52, 16), voidMat);
-  voidHole.position.set(0, 3.2, 0.86);
-  grp.add(voidHole);
-
-  // Red inner glow point light deep inside hollow
-  const gutLight = new THREE.PointLight(0xff2200, 1.2, 5);
-  gutLight.position.set(0, 3.2, 0.3);
-  grp.add(gutLight);
-
-  return grp;
-}
-
-// Dynamic Rope using 3D Splines
-function makeDynamicRope(points, material = M.rope) {
+// 3. Dynamic Catmull-Rom Spline Rope Simulation
+function makeDynamicRope(points, material = M.ropeClean) {
   const curve = new THREE.CatmullRomCurve3(points);
-  const geo = new THREE.TubeGeometry(curve, 32, 0.038, 8, false);
+  const geo = new THREE.TubeGeometry(curve, 40, 0.04, 8, false);
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.userData = { points, curve };
   return mesh;
 }
 
-function updateDynamicRope(ropeMesh, newPoints) {
+function updateRopePoints(ropeMesh, newPoints) {
   ropeMesh.geometry.dispose();
   const curve = new THREE.CatmullRomCurve3(newPoints);
-  ropeMesh.geometry = new THREE.TubeGeometry(curve, 32, 0.038, 8, false);
+  ropeMesh.geometry = new THREE.TubeGeometry(curve, 40, 0.04, 8, false);
   ropeMesh.userData.curve = curve;
 }
 
-// ── SCENE MANAGEMENT & STATE MACHINE ──────────────────────────────
+// 4. The Monolithic Predator Tree (Maw with teeth and deep hollow)
+function makePredatorTreeRig() {
+  const grp = new THREE.Group();
+
+  // Twisted trunk
+  const trunkGeo = new THREE.CylinderGeometry(0.8, 1.6, 8, 16, 8);
+  const trunk = new THREE.Mesh(trunkGeo, M.barkDead);
+  trunk.position.y = 4;
+  trunk.castShadow = true;
+  grp.add(trunk);
+
+  // Roots clawing into earth
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const rootMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.45, 3.6, 8), M.barkDead);
+    rootMesh.position.set(Math.cos(angle) * 1.6, 0.5, Math.sin(angle) * 1.6);
+    rootMesh.rotation.z = Math.PI / 2.7;
+    rootMesh.rotation.y = -angle;
+    grp.add(rootMesh);
+  }
+
+  // The Gaping Hollow Maw
+  const mawRim = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.18, 12, 18), M.barkDead);
+  mawRim.position.set(0, 3.4, 0.95);
+  grp.add(mawRim);
+
+  // Jagged heartwood wooden teeth
+  for (let t = 0; t < 10; t++) {
+    const a = (t / 10) * Math.PI * 2;
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 5), M.woodBench);
+    tooth.position.set(Math.cos(a) * 0.52, 3.4 + Math.sin(a) * 0.52, 0.96);
+    tooth.rotation.z = a - Math.PI / 2;
+    grp.add(tooth);
+  }
+
+  // Abyssal black void
+  const voidHole = new THREE.Mesh(new THREE.CircleGeometry(0.56, 18), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  voidHole.position.set(0, 3.4, 0.97);
+  grp.add(voidHole);
+
+  // Internal glowing red bioluminescent gut light
+  const gutLight = new THREE.PointLight(0xff2200, 1.8, 6);
+  gutLight.position.set(0, 3.4, 0.3);
+  grp.add(gutLight);
+
+  return grp;
+}
+
+// ── SCENE ENVIRONMENT BUILDERS ───────────────────────────────────
+
+// Detailed Park Bench
+function makeDetailedBench(x, z) {
+  const grp = new THREE.Group();
+  grp.position.set(x, 0, z);
+
+  // Seat slats
+  for (let i = 0; i < 4; i++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.035, 0.12), M.woodBench);
+    slat.position.set(0, 0.46, -0.18 + i * 0.13);
+    slat.castShadow = true;
+    grp.add(slat);
+  }
+  // Backrest slats
+  for (let i = 0; i < 3; i++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.035), M.woodBench);
+    slat.position.set(0, 0.68 + i * 0.14, -0.28);
+    slat.castShadow = true;
+    grp.add(slat);
+  }
+  // Cast iron ornamental legs
+  [-0.8, 0.8].forEach(lx => {
+    const legF = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.46, 0.06), M.ironDark);
+    legF.position.set(lx, 0.23, 0.15);
+    grp.add(legF);
+    const legB = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.02, 0.06), M.ironDark);
+    legB.position.set(lx, 0.51, -0.28);
+    grp.add(legB);
+  });
+  return grp;
+}
+
+// Lush Park Oak with cluster foliage
+function makeLushTree(x, z, h = 4.2, r = 2.0) {
+  const grp = new THREE.Group();
+  grp.position.set(x, 0, z);
+
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.4, h, 10), M.barkPark);
+  trunk.position.y = h / 2;
+  trunk.castShadow = true;
+  grp.add(trunk);
+
+  // Multi-cluster foliage for organic volume
+  for (let i = 0; i < 5; i++) {
+    const cluster = new THREE.Mesh(new THREE.SphereGeometry(r * (0.6 + Math.random() * 0.3), 10, 8), M.treeLeaves);
+    cluster.position.set(
+      (Math.random() - 0.5) * 1.2,
+      h + (Math.random() - 0.2) * 1.2,
+      (Math.random() - 0.5) * 1.2
+    );
+    cluster.castShadow = true;
+    grp.add(cluster);
+  }
+  return grp;
+}
+
+// Newspaper Prop
+function makeFoldedNewspaper() {
+  const grp = new THREE.Group();
+  const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.48, 0.006), M.newspaper);
+  p1.position.set(-0.16, 0, 0);
+  p1.rotation.y = 0.24;
+  grp.add(p1);
+  const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.48, 0.006), M.newspaper);
+  p2.position.set(0.16, 0, 0);
+  p2.rotation.y = -0.24;
+  grp.add(p2);
+  return grp;
+}
+
+// ── TIMELINE, HUD & PLAYBACK STATE ────────────────────────────────
 const TOTAL_SCENES = 8;
 let currentSceneIndex = 0;
 let sceneTime = 0;
 let isPlaying = true;
-let activeSceneCleanups = [];
-let sceneTickFunction = null;
+let sceneTick = null;
 
 const fadeEl        = document.getElementById('fade-overlay');
 const flashEl       = document.getElementById('flash-overlay');
-const horrorEl      = document.getElementById('horror-vignette');
-const chapterEl     = document.getElementById('scene-chapter');
-const headingEl     = document.getElementById('scene-heading');
+const vignetteEl    = document.getElementById('vignette-overlay');
+const chapterTagEl  = document.getElementById('chapter-tag');
+const sceneTitleEl  = document.getElementById('scene-title');
 const speakerEl     = document.getElementById('speaker-badge');
-const narrationEl   = document.getElementById('narration-text');
+const subtitleEl    = document.getElementById('subtitle-text');
 const dotsContainer = document.getElementById('chapter-dots');
 const halloweenCard = document.getElementById('halloween-card');
 const playBtn       = document.getElementById('btn-play');
 
-// Generate Chapter Dots
 for (let i = 0; i < TOTAL_SCENES; i++) {
   const dot = document.createElement('div');
   dot.className = 'ch-dot' + (i === 0 ? ' active' : '');
@@ -929,27 +1163,23 @@ function setChapterDot(idx) {
 function setSubtitle(speaker, text, speakerClass = 'sp-story') {
   speakerEl.className = 'sp-story ' + speakerClass;
   speakerEl.textContent = speaker;
-  narrationEl.innerHTML = text;
+  subtitleEl.innerHTML = text;
 }
 
-async function clearActiveScene() {
-  // Clear scene graph
+async function clearScene() {
   while (scene.children.length > 0) {
-    const obj = scene.children[0];
-    scene.remove(obj);
+    scene.remove(scene.children[0]);
   }
-  activeSceneCleanups.forEach(fn => fn());
-  activeSceneCleanups = [];
-  sceneTickFunction = null;
+  sceneTick = null;
   sceneTime = 0;
 }
 
-async function fadeToBlack(ms = 800) {
+async function fadeToBlack(ms = 700) {
   fadeEl.style.transition = `opacity ${ms}ms ease`;
   fadeEl.style.opacity = '1';
   await delay(ms);
 }
-async function fadeFromBlack(ms = 800) {
+async function fadeFromBlack(ms = 700) {
   fadeEl.style.transition = `opacity ${ms}ms ease`;
   fadeEl.style.opacity = '0';
   await delay(ms);
@@ -961,77 +1191,89 @@ async function fadeFromBlack(ms = 800) {
 
 // ── SCENE 0: A Nice Day in Ponyville ──────────────────────────────
 async function buildScene0() {
-  chapterEl.textContent = 'ACT I • SCENE 1';
-  headingEl.textContent = 'A Nice Day in Ponyville';
-  setSubtitle('ANON', `You're sitting on a park bench reading the newspaper. Apparently Luna plushies are outselling Celestia plushies, and sunhorse is having a passive-aggressive meltdown.`, 'sp-story');
+  chapterTagEl.textContent = 'ACT I • SCENE 1';
+  sceneTitleEl.textContent = 'A Nice Day in Ponyville';
+  setSubtitle('ANON', `You're sitting on a park bench reading the newspaper like a well-informed individual. Apparently Luna plushies are outselling Celestia plushies, and sunhorse is having a bit of a melty about it.`, 'sp-story');
 
   // Lighting
-  const sun = new THREE.DirectionalLight(0xfffaea, 1.3);
-  sun.position.set(15, 25, 10);
+  const sun = new THREE.DirectionalLight(0xfffaea, 1.4);
+  sun.position.set(12, 22, 10);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
   scene.add(sun);
-  scene.add(new THREE.AmbientLight(0x99ccff, 0.5));
-  scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4a7c3f, 0.4));
+  scene.add(new THREE.AmbientLight(0x99ccff, 0.55));
+  scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4a7c3f, 0.35));
 
-  // Ground & Background Trees
-  scene.add(makeGround(0x5a9e40));
-  [[-6, -4], [-2, -6], [3, -5], [7, -4], [-4, -8], [5, -9]].forEach(([x, z]) => {
-    scene.add(makeParkTree(x, z, 3.2, 1.6));
+  // Cobblestone path & grass lawn
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), M.grassLawn);
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(6, 80), M.cobbleFloor);
+  path.rotation.x = -Math.PI / 2;
+  path.position.set(0, 0.01, 0);
+  path.receiveShadow = true;
+  scene.add(path);
+
+  // Background Lush Trees
+  [[-7, -4], [-3, -7], [4, -6], [8, -4], [-5, -9], [6, -10]].forEach(([tx, tz]) => {
+    scene.add(makeLushTree(tx, tz, 3.8 + Math.random() * 0.8, 1.8));
   });
 
-  // Bench & Anon
-  const bench = makeParkBench(0, 0);
+  // Bench with Anon
+  const bench = makeDetailedBench(0, 0);
   scene.add(bench);
 
-  const anon = makeAnon();
-  anon.position.set(0.2, 0.48, -0.05);
+  const anon = makeAnonRig();
+  anon.position.set(0.18, 0.48, -0.05);
   // Sitting pose
   anon.userData.legs.leftLeg.group.rotation.x = -1.4;
-  anon.userData.legs.leftLeg.lower.rotation.x = 1.45;
+  anon.userData.legs.leftLeg.lower.rotation.x = 1.42;
   anon.userData.legs.rightLeg.group.rotation.x = -1.4;
-  anon.userData.legs.rightLeg.lower.rotation.x = 1.45;
-  // Hold newspaper
-  const newspaper = makeNewspaper();
-  newspaper.position.set(0, 1.25, 0.35);
+  anon.userData.legs.rightLeg.lower.rotation.x = 1.42;
+
+  // Holding broadsheet newspaper
+  const newspaper = makeFoldedNewspaper();
+  newspaper.position.set(0, 1.25, 0.38);
   anon.add(newspaper);
   scene.add(anon);
 
-  // Ponies Approaching
-  const rainbow = makePony({
-    bodyColor: 0x66ccff, maneColor: 0xff3344, tailColor: 0x33ccff, eyeColor: 0x990066, isPegasus: true
+  // Approaching Ponies
+  const rainbow = makePonyRig({
+    bodyColor: 0x66ccff, maneColor: 0xff3344, eyeColorHex: '#990066', isPegasus: true
   });
-  rainbow.position.set(-2.8, 1.4, 1.8);
+  rainbow.position.set(-2.8, 1.4, 1.6);
   rainbow.rotation.y = 0.8;
   scene.add(rainbow);
 
-  const pinkie = makePony({
-    bodyColor: 0xff88cc, maneColor: 0xff1188, eyeColor: 0x3388ff
+  const pinkie = makePonyRig({
+    bodyColor: 0xff88cc, maneColor: 0xff1188, eyeColorHex: '#3388ff'
   });
-  pinkie.position.set(2.4, 0, 1.6);
+  pinkie.position.set(2.4, 0, 1.5);
   pinkie.rotation.y = -0.7;
   scene.add(pinkie);
 
-  camera.position.set(0, 2.2, 4.8);
+  camera.position.set(0, 2.0, 4.6);
   cameraTarget.set(0, 1.2, 0);
 
-  sceneTickFunction = (t) => {
-    // Hovering Rainbow Dash
+  sceneTick = (t, dt) => {
+    // Hovering Rainbow Dash with banking wings
     rainbow.position.y = 1.4 + Math.sin(t * 3.5) * 0.12;
-    rainbow.userData.wings.left.rotation.z = Math.sin(t * 18) * 0.5;
-    rainbow.userData.wings.right.rotation.z = -Math.sin(t * 18) * 0.5;
+    rainbow.rotation.z = Math.sin(t * 2.0) * 0.08;
+    rainbow.userData.wings.left.rotation.z = Math.sin(t * 20) * 0.5;
+    rainbow.userData.wings.right.rotation.z = -Math.sin(t * 20) * 0.5;
 
-    // Bouncy Pinkie Pie
-    pinkie.position.y = Math.abs(Math.sin(t * 5.0)) * 0.15;
-    pinkie.userData.headGroup.rotation.z = Math.sin(t * 3.0) * 0.15;
+    // Bouncy Pinkie Pie squash and stretch
+    pinkie.position.y = Math.abs(Math.sin(t * 5.2)) * 0.16;
+    pinkie.userData.headGroup.rotation.z = Math.sin(t * 3.5) * 0.14;
 
-    // Camera slow orbit
+    // Camera slow cinematic drift
     if (!freeCamMode) {
-      camera.position.x = Math.sin(t * 0.15) * 1.5;
-      camera.position.z = 4.8 + Math.cos(t * 0.15) * 0.4;
+      camera.position.x = Math.sin(t * 0.12) * 1.2;
+      camera.position.z = 4.6 + Math.cos(t * 0.12) * 0.4;
     }
 
-    // Story Script Timeline
     if (t > 4 && t <= 9) {
       setSubtitle('RAINBOW DASH', `"Quit being lame, Anon! Why do you want to read a dusty old newspaper on such a nice day?"`, 'sp-rainbow');
     } else if (t > 9 && t <= 15) {
@@ -1039,71 +1281,70 @@ async function buildScene0() {
     } else if (t > 15 && t <= 20) {
       setSubtitle('ANON', `No, the other thing. "Ah kega"? I don't know what "Ass Kek Gay" is. And you know what? I don't care.`, 'sp-anon');
     } else if (t > 20) {
-      setSubtitle('PINKIE PIE', `"You're gonna stay right here! Rainbow, go fetch Applejack with her rope! ...Can you flip to the finance page? I want to see my investments."`, 'sp-pinkie');
+      setSubtitle('PINKIE PIE', `"You're gonna stay right here! Rainbow, fly fetch Applejack with her rope! ...Can you flip to the finance page? I want to see my investments."`, 'sp-pinkie');
     }
   };
 }
 
-// ── SCENE 1: The Rope Around the Tree ─────────────────────────────
+// ── SCENE 1: The Rope Around the Oak ──────────────────────────────
 async function buildScene1() {
-  chapterEl.textContent = 'ACT I • SCENE 2';
-  headingEl.textContent = 'The Rope Around the Oak';
-  setSubtitle('APPLEJACK', `"Now Anon, Rainbow Dash 'ere tells me y'aint never played Ah Ke Gaa before. And Ah think that ain't right."`, 'sp-applejack');
+  chapterTagEl.textContent = 'ACT I • SCENE 2';
+  sceneTitleEl.textContent = 'The Rope Around the Oak';
+  setSubtitle('APPLEJACK', `"Now Anon. Rainbow Dash 'ere tells me y'aint never played Ah Ke Gaa before. And Ah think that ain't right."`, 'sp-applejack');
 
-  // Sunny noon lighting
   scene.add(new THREE.AmbientLight(0xaad0ff, 0.55));
-  const sun = new THREE.DirectionalLight(0xfffaea, 1.25);
-  sun.position.set(10, 20, 10);
+  const sun = new THREE.DirectionalLight(0xfffaea, 1.3);
+  sun.position.set(10, 22, 10);
   sun.castShadow = true;
   scene.add(sun);
-  scene.add(makeGround(0x5a9e40));
 
-  // The Park Oak
-  const parkOak = makeParkTree(0, 0, 4.2, 2.2);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), M.grassLawn);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  // The Big Park Oak
+  const parkOak = makeLushTree(0, 0, 4.6, 2.4);
   scene.add(parkOak);
 
-  // Applejack with cowboy hat
-  const aj = makePony({
-    bodyColor: 0xffa500, maneColor: 0xfae078, eyeColor: 0x44aa44, hasHat: true
-  });
+  // Applejack with Stetson hat
+  const aj = makePonyRig({ bodyColor: 0xffa500, maneColor: 0xfae078, eyeColorHex: '#44aa44', hasHat: true });
   aj.position.set(1.2, 0, 1.2);
   aj.rotation.y = -Math.PI / 1.5;
   scene.add(aj);
 
-  // Lineup for Ahh Ke Gaa
-  const rainbow = makePony({ bodyColor: 0x66ccff, maneColor: 0xff3344, isPegasus: true });
+  // Lineup
+  const rainbow = makePonyRig({ bodyColor: 0x66ccff, maneColor: 0xff3344, eyeColorHex: '#990066', isPegasus: true });
   rainbow.position.set(0.6, 0, 2.4);
   rainbow.rotation.y = -Math.PI / 1.6;
   scene.add(rainbow);
 
-  const anon = makeAnon();
+  const anon = makeAnonRig();
   anon.position.set(0, 0, 3.8);
   anon.rotation.y = -Math.PI / 1.8;
   scene.add(anon);
 
-  const pinkie = makePony({ bodyColor: 0xff88cc, maneColor: 0xff1188 });
+  const pinkie = makePonyRig({ bodyColor: 0xff88cc, maneColor: 0xff1188, eyeColorHex: '#3388ff' });
   pinkie.position.set(-0.6, 0, 5.0);
   pinkie.rotation.y = -Math.PI / 1.7;
   scene.add(pinkie);
 
-  // Rope wrapped around the tree trunk running down the lineup
+  // Clean hemp rope tied around tree running down the lineup
   const ropePts = [
-    v3(0, 0.7, 0.3),
-    v3(0.5, 0.7, 0.8),
-    v3(1.0, 0.75, 1.4),
-    v3(0.6, 0.75, 2.6),
-    v3(0.1, 0.85, 3.9),
-    v3(-0.5, 0.75, 5.1)
+    v3(0, 0.75, 0.3),
+    v3(0.5, 0.75, 0.8),
+    v3(1.0, 0.8, 1.4),
+    v3(0.6, 0.8, 2.6),
+    v3(0.1, 0.9, 3.9),
+    v3(-0.5, 0.8, 5.1)
   ];
-  const ropeMesh = makeDynamicRope(ropePts);
+  const ropeMesh = makeDynamicRope(ropePts, M.ropeClean);
   scene.add(ropeMesh);
 
   camera.position.set(4.5, 2.2, 5.2);
   cameraTarget.set(0, 1.4, 2.5);
 
-  sceneTickFunction = (t) => {
-    // Ponies bobbing in anticipation
-    aj.userData.headGroup.rotation.x = Math.sin(t * 2) * 0.08;
+  sceneTick = (t, dt) => {
+    aj.userData.headGroup.rotation.x = Math.sin(t * 2.2) * 0.08;
     rainbow.userData.wings.left.rotation.z = Math.sin(t * 12) * 0.3;
 
     if (!freeCamMode) {
@@ -1123,50 +1364,53 @@ async function buildScene1() {
   };
 }
 
-// ── SCENE 2: The First Hit (Euphoria Flash) ───────────────────────
+// ── SCENE 2: The First Hit (The Chemical Flash) ───────────────────
 async function buildScene2() {
-  chapterEl.textContent = 'ACT I • SCENE 3';
-  headingEl.textContent = 'The First Hit (The Chemical Rush)';
+  chapterTagEl.textContent = 'ACT I • SCENE 3';
+  sceneTitleEl.textContent = 'The First Hit (The Chemical Rush)';
   setSubtitle('PONY CHORUS', `"On three! One... two... three! Ahh Ke Gaa, Luuuu~ Ahh Ke Gaa, Luuuu~"`, 'sp-pinkie');
 
-  scene.add(new THREE.AmbientLight(0xffeacc, 0.6));
+  scene.add(new THREE.AmbientLight(0xffeacc, 0.65));
   const sun = new THREE.DirectionalLight(0xfffaea, 1.4);
   sun.position.set(8, 22, 6);
   sun.castShadow = true;
   scene.add(sun);
-  scene.add(makeGround(0x5a9e40));
 
-  const parkOak = makeParkTree(0, 0, 4.2, 2.2);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), M.grassLawn);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  const parkOak = makeLushTree(0, 0, 4.6, 2.4);
   scene.add(parkOak);
 
-  const aj = makePony({ bodyColor: 0xffa500, maneColor: 0xfae078, hasHat: true });
+  const aj = makePonyRig({ bodyColor: 0xffa500, maneColor: 0xfae078, eyeColorHex: '#44aa44', hasHat: true });
   aj.position.set(0.8, 0, 1.4);
   aj.rotation.y = -Math.PI / 1.7;
   scene.add(aj);
 
-  const rainbow = makePony({ bodyColor: 0x66ccff, maneColor: 0xff3344, isPegasus: true });
+  const rainbow = makePonyRig({ bodyColor: 0x66ccff, maneColor: 0xff3344, eyeColorHex: '#990066', isPegasus: true });
   rainbow.position.set(0.3, 0, 2.5);
   rainbow.rotation.y = -Math.PI / 1.7;
   scene.add(rainbow);
 
-  const anon = makeAnon();
+  const anon = makeAnonRig();
   anon.position.set(-0.2, 0, 3.8);
   anon.rotation.y = -Math.PI / 1.7;
   scene.add(anon);
 
-  const pinkie = makePony({ bodyColor: 0xff88cc, maneColor: 0xff1188 });
+  const pinkie = makePonyRig({ bodyColor: 0xff88cc, maneColor: 0xff1188, eyeColorHex: '#3388ff' });
   pinkie.position.set(-0.8, 0, 5.0);
   pinkie.rotation.y = -Math.PI / 1.7;
   scene.add(pinkie);
 
   const ropePts = [
-    v3(0, 0.7, 0.3),
-    v3(0.7, 0.75, 1.4),
-    v3(0.3, 0.75, 2.5),
-    v3(-0.2, 0.85, 3.8),
-    v3(-0.8, 0.75, 5.0)
+    v3(0, 0.75, 0.3),
+    v3(0.7, 0.8, 1.4),
+    v3(0.3, 0.8, 2.5),
+    v3(-0.2, 0.9, 3.8),
+    v3(-0.8, 0.8, 5.0)
   ];
-  const ropeMesh = makeDynamicRope(ropePts);
+  const ropeMesh = makeDynamicRope(ropePts, M.ropeClean);
   scene.add(ropeMesh);
 
   camera.position.set(-2.5, 1.8, 4.6);
@@ -1175,7 +1419,7 @@ async function buildScene2() {
   let hasTriggeredChant = false;
   let hasTriggeredEuphoria = false;
 
-  sceneTickFunction = (t) => {
+  sceneTick = (t, dt) => {
     // Ponies pulling rhythmically
     const pullTug = Math.sin(t * 3.5) * 0.12;
     aj.userData.bodyGroup.position.z = pullTug;
@@ -1184,24 +1428,24 @@ async function buildScene2() {
 
     if (t > 2.5 && !hasTriggeredChant) {
       hasTriggeredChant = true;
-      triggerChantSequence(false, 1.0);
+      triggerChant(false, 1.0);
     }
 
-    // Anon reluctantly sings at t = 5s -> MASSIVE EUPHORIA HIT
-    if (t > 5 && !hasTriggeredEuphoria) {
+    // THE HIT at t = 5.0s -> White/Golden Flash + Pad swell + Pupils blow open
+    if (t > 5.0 && !hasTriggeredEuphoria) {
       hasTriggeredEuphoria = true;
       playEuphoriaSwell();
       flashEl.style.opacity = '0.9';
       setTimeout(() => { flashEl.style.opacity = '0'; }, 1600);
 
-      // Anon's ecstatic backward stumble
+      // Anon stumbles backward in ecstasy
       anon.userData.body.rotation.x = -0.55;
       anon.userData.arms.leftArm.group.rotation.x = 0.6;
       anon.userData.arms.rightArm.group.rotation.x = 0.6;
-      anon.position.z += 0.5;
+      anon.position.z += 0.6;
     }
 
-    if (t > 5 && t <= 11) {
+    if (t > 5.0 && t <= 11) {
       setSubtitle('ANON', `...Fine! I'll sing ONE verse. "...Ahh Ke Gaa—" <br/><strong>A FLOOD OF RAW CHEMICALS SLAMS INTO YOUR BRAIN LIKE A BATTERING RAM.</strong>`, 'sp-anon');
     } else if (t > 11 && t <= 17) {
       setSubtitle('ANON', `Warm summer breeze... being held by the one you love... purest dopamine. You stumble backwards, letting go of the rope, drooling on the grass.`, 'sp-story');
@@ -1215,46 +1459,56 @@ async function buildScene2() {
 
 // ── SCENE 3: 1:09 AM (Withdrawal Insomnia) ────────────────────────
 async function buildScene3() {
-  chapterEl.textContent = 'ACT II • SCENE 1';
-  headingEl.textContent = 'Insomnia & Withdrawal';
+  chapterTagEl.textContent = 'ACT II • SCENE 1';
+  sceneTitleEl.textContent = 'Insomnia & Withdrawal';
   setSubtitle('ANON', `To them, it's a fun act. To you, it's heroin mixed with angel pussy juice. And you're crashing. Hard.`, 'sp-anon');
 
   // Nocturnal dark bedroom lighting
   scene.add(new THREE.AmbientLight(0x0c1426, 0.45));
-  const moon = new THREE.DirectionalLight(0x4466aa, 0.6);
-  moon.position.set(-6, 12, 4);
+  const moon = new THREE.DirectionalLight(0x4466aa, 0.7);
+  moon.position.set(-6, 14, 4);
   moon.castShadow = true;
   scene.add(moon);
 
-  // Floor & Walls
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), M.woodPlank);
+  // Slanted attic ceiling beams & floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), M.woodBench);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  // Bed
+  // Cozy bed with dynamic duvet
   const bedGrp = new THREE.Group();
-  const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 2.4), M.woodPlank);
-  bedFrame.position.set(0, 0.2, 0);
+  const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 2.4), M.woodBench);
+  bedFrame.position.y = 0.2;
   bedGrp.add(bedFrame);
-  const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 2.3), M.white);
-  mattress.position.set(0, 0.45, 0);
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.35, 2.3), new THREE.MeshStandardMaterial({ color: 0xeeeeee }));
+  mattress.position.y = 0.45;
   bedGrp.add(mattress);
   scene.add(bedGrp);
 
   // Nightstand & Alarm Clock
-  const stand = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), M.woodPlank);
+  const stand = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), M.woodBench);
   stand.position.set(1.2, 0.3, 0.8);
   scene.add(stand);
 
-  const clockBox = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.1), M.shoe);
+  const clockBox = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.1), M.ironDark);
   clockBox.position.set(1.2, 0.68, 0.8);
   scene.add(clockBox);
-  const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.1), new THREE.MeshBasicMaterial({ color: 0x00ff88 }));
+
+  // Glowing phosphor green clock face (1:09 AM -> 1:10 AM)
+  const clockCanvas = document.createElement('canvas');
+  clockCanvas.width = 128; clockCanvas.height = 64;
+  const cctx = clockCanvas.getContext('2d');
+  cctx.fillStyle = '#051005'; cctx.fillRect(0, 0, 128, 64);
+  cctx.fillStyle = '#00ff66'; cctx.font = 'bold 36px monospace';
+  cctx.fillText('1:09', 18, 45);
+  const clockTex = new THREE.CanvasTexture(clockCanvas);
+
+  const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.11), new THREE.MeshBasicMaterial({ map: clockTex }));
   clockFace.position.set(1.2, 0.68, 0.86);
   scene.add(clockFace);
 
-  // Anon lying in bed, tossing and turning
-  const anon = makeAnon(0x2e5638, true, true);
+  // Anon shivering with tremors in bed
+  const anon = makeAnonRig({ isShirtless: true, isInjured: true });
   anon.position.set(0, 0.65, 0);
   anon.rotation.x = Math.PI / 2;
   anon.rotation.z = Math.PI / 4;
@@ -1263,54 +1517,65 @@ async function buildScene3() {
   camera.position.set(0.6, 2.2, 2.6);
   cameraTarget.set(0, 0.7, 0.2);
 
-  let lastTick = 0;
-  sceneTickFunction = (t) => {
-    // Ticking heartbeat & clock
-    if (Math.floor(t * 1.5) > lastTick) {
-      lastTick = Math.floor(t * 1.5);
-      playClockTick();
-      if (lastTick % 2 === 0) playHeartbeat();
+  let lastHeartbeat = 0;
+  let hasFlippedClock = false;
+
+  sceneTick = (t, dt) => {
+    // Ticking heartbeat
+    if (Math.floor(t * 1.5) > lastHeartbeat) {
+      lastHeartbeat = Math.floor(t * 1.5);
+      playHeartbeat();
     }
 
     // Anon shaking with tremors
-    anon.position.x = Math.sin(t * 22) * 0.02;
-    anon.position.z = Math.cos(t * 22) * 0.02;
+    anon.position.x = Math.sin(t * 24) * 0.02;
+    anon.position.z = Math.cos(t * 24) * 0.02;
+
+    if (t > 10 && !hasFlippedClock) {
+      hasFlippedClock = true;
+      cctx.fillStyle = '#051005'; cctx.fillRect(0, 0, 128, 64);
+      cctx.fillStyle = '#00ff66'; cctx.font = 'bold 36px monospace';
+      cctx.fillText('1:10', 18, 45);
+      clockTex.needsUpdate = true;
+    }
 
     if (t > 4 && t <= 10) {
-      setSubtitle('ANON', `You close your eyes to sleep, but rest doesn't come. You're shaking. Tremors. Sweat pours down your forehead.`, 'sp-story');
+      setSubtitle('ANON', `You close your eyes to sleep, but rest doesn't come easily. Shivering tremors wrack your body. Cold sweat covers your skin.`, 'sp-story');
     } else if (t > 10 && t <= 16) {
       setSubtitle('ANON', `You look at your clock: <strong>1:09 AM</strong>. Then <strong>1:10 AM</strong>. A terrible thought enters your mind: <em>What if you played... just a little more?</em>`, 'sp-anon');
     } else if (t > 16) {
-      setSubtitle('ANON', `Applejack has her rope in her shed. She wouldn't notice if you just borrowed it... just for a little while. Throwing on clothes, you head into the night.`, 'sp-story');
+      setSubtitle('ANON', `Applejack has her rope in her shed. She wouldn't notice if you just borrowed it... just for a little while. Throwing on clothes, you slip out into the dark.`, 'sp-story');
     }
   };
 }
 
 // ── SCENE 4: Town Square Frenzy (The Web of Ropes) ────────────────
 async function buildScene4() {
-  chapterEl.textContent = 'ACT II • SCENE 2';
-  headingEl.textContent = 'The Town Square Tether Frenzy';
+  chapterTagEl.textContent = 'ACT II • SCENE 2';
+  sceneTitleEl.textContent = 'The Town Square Tether Frenzy';
   setSubtitle('ANON', `"AHHHHHHH KEEEEEEEEEE GAAAAAAAAA LUUHUUU!!!"`, 'sp-anon');
 
-  // Harsh oppressive midday glare
   scene.add(new THREE.AmbientLight(0xffffff, 0.5));
   const sun = new THREE.DirectionalLight(0xfffaea, 1.5);
   sun.position.set(5, 25, 5);
   sun.castShadow = true;
   scene.add(sun);
-  scene.add(makeGround(0x6b705c)); // Cobblestone/dirt square
+
+  const squareFloor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), M.cobbleFloor);
+  squareFloor.rotation.x = -Math.PI / 2;
+  scene.add(squareFloor);
 
   // Surround with 6 perimeter trees
   const treePositions = [
-    [-6, -4], [0, -7], [6, -4],
-    [-7, 3],  [0, 8],  [7, 3]
+    [-7, -4], [0, -8], [7, -4],
+    [-8, 3],  [0, 9],  [8, 3]
   ];
   treePositions.forEach(([tx, tz]) => {
-    scene.add(makeParkTree(tx, tz, 3.8, 1.8));
+    scene.add(makeLushTree(tx, tz, 4.2, 2.0));
   });
 
-  // Center Anon: Shirtless, drenched in sweat, bloody hands, screaming madman
-  const anon = makeAnon(0x2e5638, true, true);
+  // Center Anon: Shirtless, drenched in sweat, raw flayed bloody palms
+  const anon = makeAnonRig({ isShirtless: true, isInjured: true });
   anon.position.set(0, 0, 0);
   scene.add(anon);
 
@@ -1321,22 +1586,22 @@ async function buildScene4() {
       v3(tx * 0.8, 1.8, tz * 0.8),
       v3(tx * 0.4, 1.2 + Math.sin(i) * 0.2, tz * 0.4),
       v3(0, 1.1, 0)
-    ], i % 2 === 0 ? M.ropeBloody : M.rope);
+    ], i % 2 === 0 ? M.ropeGory : M.ropeClean);
     scene.add(rope);
     webRopes.push(rope);
   });
 
-  // Twilight Sparkle with magical levitation horn
-  const twilight = makePony({
-    bodyColor: 0xd980fa, maneColor: 0x3d1a78, eyeColor: 0x9c27b0, isAlicorn: true
+  // Twilight Sparkle with glowing alicorn horn
+  const twilight = makePonyRig({
+    bodyColor: 0xd980fa, maneColor: 0x3d1a78, eyeColorHex: '#9c27b0', isAlicorn: true
   });
   twilight.position.set(0, 0, 4.2);
   twilight.rotation.y = Math.PI;
   scene.add(twilight);
 
   // Levitated Boulder above Anon
-  const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 1), new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.9 }));
-  boulder.position.set(0, 3.2, 0.4);
+  const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(0.48, 1), new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.9 }));
+  boulder.position.set(0, 3.4, 0.4);
   scene.add(boulder);
 
   camera.position.set(3.5, 3.2, 5.5);
@@ -1345,7 +1610,7 @@ async function buildScene4() {
   let hasThunked = false;
   let chantInterval = 0;
 
-  sceneTickFunction = (t) => {
+  sceneTick = (t, dt) => {
     // Mad pulling oscillation
     const violentTug = Math.sin(t * 8.0) * 0.25;
     anon.userData.body.rotation.x = 0.35 + violentTug;
@@ -1353,13 +1618,13 @@ async function buildScene4() {
     anon.position.z = Math.sin(t * 8.0) * 0.15;
 
     // Screaming Ahh Ke Gaa loop
-    if (t - chantInterval > 2.8) {
+    if (t - chantInterval > 2.6) {
       chantInterval = t;
-      triggerChantSequence(false, 1.6);
+      triggerChant(false, 1.6);
     }
 
     // Camera shakes frantically
-    if (!freeCamMode && t < 16) {
+    if (!freeCamMode && t < 15) {
       camera.position.x = 3.5 + (Math.random() - 0.5) * 0.08;
       camera.position.y = 3.2 + (Math.random() - 0.5) * 0.08;
     }
@@ -1371,7 +1636,7 @@ async function buildScene4() {
     } else if (t > 15 && !hasThunked) {
       hasThunked = true;
       playBoneSnap();
-      boulder.position.y = 1.4; // Boulder slams down!
+      boulder.position.y = 1.4; // Boulder strikes!
       fadeToBlack(300).then(() => {
         setSubtitle('STORY', `*THUNK* Twilight levitates a paving stone and knocks you unconscious. Darkness follows.`, 'sp-story');
       });
@@ -1381,34 +1646,32 @@ async function buildScene4() {
 
 // ── SCENE 5: Citizen's Arrest & Escape ────────────────────────────
 async function buildScene5() {
-  chapterEl.textContent = 'ACT III • SCENE 1';
-  headingEl.textContent = "Citizen's Arrest & Escape";
+  chapterTagEl.textContent = 'ACT III • SCENE 1';
+  sceneTitleEl.textContent = "Citizen's Arrest & Escape";
   setSubtitle('TWILIGHT SPARKLE', `"Anon, I'm sorry... Ponyville doesn't have a jail. You left us no choice. The Royal Guard will arrive in the morning."`, 'sp-twilight');
 
-  // Dim cellar / library basement lighting
-  scene.add(new THREE.AmbientLight(0x1a0f2e, 0.4));
-  const candle = new THREE.PointLight(0xffa040, 1.4, 8);
+  scene.add(new THREE.AmbientLight(0x1a0f2e, 0.45));
+  const candle = new THREE.PointLight(0xffa040, 1.5, 8);
   candle.position.set(1.5, 2.0, 1.2);
   scene.add(candle);
 
-  // Basement stone floor & walls
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x24242e, roughness: 0.95 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), stoneMat);
+  // Basement stone floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), M.cobbleFloor);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
   // Wooden chair
   const chairGrp = new THREE.Group();
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.7), M.woodPlank);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.06, 0.7), M.woodBench);
   seat.position.y = 0.5;
   chairGrp.add(seat);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.8, 0.06), M.woodPlank);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.8, 0.06), M.woodBench);
   back.position.set(0, 0.9, -0.32);
   chairGrp.add(back);
   scene.add(chairGrp);
 
   // Anon tied to chair
-  const anon = makeAnon(0x2e5638, false, true);
+  const anon = makeAnonRig({ isInjured: true });
   anon.position.set(0, 0.1, 0);
   anon.userData.legs.leftLeg.group.rotation.x = -1.4;
   anon.userData.legs.rightLeg.group.rotation.x = -1.4;
@@ -1416,14 +1679,14 @@ async function buildScene5() {
   anon.userData.arms.rightArm.group.rotation.x = 0.4;
   scene.add(anon);
 
-  // Ropes binding Anon to the chair
-  const bindingRope = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 8, 16), M.rope);
+  // Ropes binding Anon
+  const bindingRope = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 8, 16), M.ropeClean);
   bindingRope.position.set(0, 0.95, 0);
   bindingRope.rotation.x = Math.PI / 2;
   scene.add(bindingRope);
 
   // Book on table: "Directory of Notable Local Sites"
-  const table = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 0.8), M.woodPlank);
+  const table = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 0.8), M.woodBench);
   table.position.set(-1.8, 0.35, 0);
   scene.add(table);
   const book = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.4), new THREE.MeshStandardMaterial({ color: 0x882211 }));
@@ -1433,7 +1696,7 @@ async function buildScene5() {
   camera.position.set(1.8, 1.8, 2.8);
   cameraTarget.set(0, 0.9, 0);
 
-  sceneTickFunction = (t) => {
+  sceneTick = (t, dt) => {
     if (t > 4 && t <= 11) {
       setSubtitle('ANON', `From your time playing Ahh Ke Gaa, you've developed an intimate understanding of rope. Rope isn't rigid. Rope wants to move. Every knot is a compromise between tension and slack.`, 'sp-anon');
     } else if (t > 11 && t <= 17) {
@@ -1448,48 +1711,49 @@ async function buildScene5() {
 
 // ── SCENE 6: The Natural Tree in the Deep Woods ───────────────────
 async function buildScene6() {
-  chapterEl.textContent = 'ACT IV • SCENE 1';
-  headingEl.textContent = 'The Natural Ahh Ke Tree';
+  chapterTagEl.textContent = 'ACT IV • SCENE 1';
+  sceneTitleEl.textContent = 'The Natural Ahh Ke Tree';
   setSubtitle('ANON', `Standing alone in the middle of a dead grove, a lone tree stands. Midway up is a pitch-black hollow... and extending out from it is a pristine length of rope.`, 'sp-story');
 
-  // Eerie dark forest lighting & ground fog
   scene.fog = new THREE.FogExp2(0x06090e, 0.07);
-  scene.add(new THREE.AmbientLight(0x0a101a, 0.7));
+  scene.add(new THREE.AmbientLight(0x0a101a, 0.75));
   const moon = new THREE.DirectionalLight(0x224466, 0.5);
   moon.position.set(-8, 18, -4);
   moon.castShadow = true;
   scene.add(moon);
-  scene.add(makeGround(0x161a14, 150));
+
+  const forestGround = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), M.barkDead);
+  forestGround.rotation.x = -Math.PI / 2;
+  scene.add(forestGround);
 
   // The Predator Tree
-  const predTree = makePredatorTree();
+  const predTree = makePredatorTreeRig();
   predTree.position.set(0, 0, 0);
   scene.add(predTree);
 
-  // The Bait Rope spilling from the hollow to the ground
+  // Bait Rope spilling out of hollow
   const baitRopePts = [
-    v3(0, 3.2, 0.8),
-    v3(0.2, 2.2, 1.4),
-    v3(0.1, 1.0, 2.2),
-    v3(0.3, 0.1, 3.0),
-    v3(0.5, 0.04, 3.8)
+    v3(0, 3.4, 0.9),
+    v3(0.2, 2.4, 1.5),
+    v3(0.1, 1.2, 2.3),
+    v3(0.3, 0.1, 3.2),
+    v3(0.5, 0.04, 4.0)
   ];
-  const baitRope = makeDynamicRope(baitRopePts);
+  const baitRope = makeDynamicRope(baitRopePts, M.ropeClean);
   scene.add(baitRope);
 
   // Anon approaching
-  const anon = makeAnon(0x2e5638, false, true);
-  anon.position.set(0.5, 0, 4.4);
+  const anon = makeAnonRig({ isInjured: true });
+  anon.position.set(0.5, 0, 4.6);
   anon.rotation.y = Math.PI;
   scene.add(anon);
 
   camera.position.set(3.2, 2.4, 6.2);
-  cameraTarget.set(0, 2.2, 1.2);
+  cameraTarget.set(0, 2.4, 1.2);
 
   let hasTouchedRope = false;
 
-  sceneTickFunction = (t) => {
-    // Camera slow creeping push
+  sceneTick = (t, dt) => {
     if (!freeCamMode) {
       camera.position.z = 6.2 - t * 0.06;
       camera.position.x = 3.2 + Math.sin(t * 0.15) * 0.3;
@@ -1500,7 +1764,7 @@ async function buildScene6() {
     } else if (t > 10 && t <= 15) {
       if (!hasTouchedRope) {
         hasTouchedRope = true;
-        triggerChantSequence(false, 0.8);
+        triggerChant(false, 0.8);
       }
       setSubtitle('ANON', `You silence those thoughts. You pull the rope taut and begin singing: <em>"Ahh Ke Gaa, Luuuu~ Ahh Ke Gaa, Luuuu~"</em>`, 'sp-anon');
     } else if (t > 15 && t <= 20) {
@@ -1513,63 +1777,62 @@ async function buildScene6() {
 
 // ── SCENE 7: The Devouring (Horror Climax & Epilogue) ──────────────
 async function buildScene7() {
-  chapterEl.textContent = 'ACT IV • SCENE 2';
-  headingEl.textContent = 'The Devouring & Epilogue';
+  chapterTagEl.textContent = 'ACT IV • SCENE 2';
+  sceneTitleEl.textContent = 'The Devouring & Epilogue';
   setSubtitle('ANON', `HELP! SOMEBODY, HEEEEELP!`, 'sp-anon');
 
-  horrorEl.style.opacity = '1';
+  vignetteEl.classList.add('horror');
   scene.fog = new THREE.FogExp2(0x060204, 0.08);
   scene.add(new THREE.AmbientLight(0x180505, 0.85));
 
-  const predTree = makePredatorTree();
+  const predTree = makePredatorTreeRig();
   scene.add(predTree);
 
-  // Anon suspended in mid-air being hauled toward the hollow
-  const anon = makeAnon(0x2e5638, false, true);
-  anon.position.set(0, 3.2, 1.8);
-  anon.rotation.x = -Math.PI / 2.3; // Arching backward
+  // Anon suspended mid-air being hauled toward hollow
+  const anon = makeAnonRig({ isInjured: true });
+  anon.position.set(0, 3.4, 1.8);
+  anon.rotation.x = -Math.PI / 2.3;
   scene.add(anon);
 
-  // Multiple grasping tentacle ropes erupting from the hollow
+  // Multiple grasping tentacle ropes
   const ropes = [
-    makeDynamicRope([v3(0, 3.2, 0.8), v3(-0.2, 3.3, 1.4), v3(-0.15, 3.2, 1.8)]), // Left arm
-    makeDynamicRope([v3(0, 3.2, 0.8), v3(0.2, 3.3, 1.4), v3(0.15, 3.2, 1.8)]),  // Right arm
-    makeDynamicRope([v3(0, 3.2, 0.8), v3(-0.1, 2.5, 1.2), v3(-0.1, 2.2, 1.8)]), // Left leg
-    makeDynamicRope([v3(0, 3.2, 0.8), v3(0.1, 2.5, 1.2), v3(0.1, 2.2, 1.8)]),  // Right leg
-    makeDynamicRope([v3(0, 3.2, 0.8), v3(0, 3.2, 1.3), v3(0, 3.2, 1.8)])        // Waist
+    makeDynamicRope([v3(0, 3.4, 0.9), v3(-0.2, 3.5, 1.4), v3(-0.15, 3.4, 1.8)], M.ropeGory),
+    makeDynamicRope([v3(0, 3.4, 0.9), v3(0.2, 3.5, 1.4), v3(0.15, 3.4, 1.8)], M.ropeGory),
+    makeDynamicRope([v3(0, 3.4, 0.9), v3(-0.1, 2.7, 1.3), v3(-0.1, 2.3, 1.8)], M.ropeGory),
+    makeDynamicRope([v3(0, 3.4, 0.9), v3(0.1, 2.7, 1.3), v3(0.1, 2.3, 1.8)], M.ropeGory),
+    makeDynamicRope([v3(0, 3.4, 0.9), v3(0, 3.4, 1.4), v3(0, 3.4, 1.8)], M.ropeGory)
   ];
   ropes.forEach(r => scene.add(r));
 
-  camera.position.set(2.4, 3.4, 3.6);
-  cameraTarget.set(0, 3.2, 0.8);
+  camera.position.set(2.4, 3.6, 3.6);
+  cameraTarget.set(0, 3.4, 0.9);
 
   let hasSnapped = false;
   let hasChantedEldritch = false;
   let hasShownHalloween = false;
 
-  sceneTickFunction = (t) => {
-    // Frantic struggling until snap
+  sceneTick = (t, dt) => {
     if (!hasSnapped) {
       anon.position.z = 1.8 - t * 0.08;
-      anon.userData.arms.leftArm.group.rotation.z = Math.sin(t * 20) * 0.4;
-      anon.userData.arms.rightArm.group.rotation.z = -Math.sin(t * 20) * 0.4;
-      camera.position.x = 2.4 + (Math.random() - 0.5) * 0.05;
-      camera.position.y = 3.4 + (Math.random() - 0.5) * 0.05;
+      anon.userData.arms.leftArm.group.rotation.z = Math.sin(t * 22) * 0.4;
+      anon.userData.arms.rightArm.group.rotation.z = -Math.sin(t * 22) * 0.4;
+      camera.position.x = 2.4 + (Math.random() - 0.5) * 0.06;
+      camera.position.y = 3.6 + (Math.random() - 0.5) * 0.06;
     }
 
-    if (t > 5 && !hasSnapped) {
+    if (t > 5.0 && !hasSnapped) {
       hasSnapped = true;
       playBoneSnap();
-      anon.userData.body.rotation.x = 1.4; // Spine brutally snaps backwards!
+      anon.userData.body.rotation.x = 1.4; // Spine snaps backwards!
       setSubtitle('STORY', `<strong>CRACK!</strong> Your intestines crush from the coils. Your vertebrae snaps backwards as your body is forced belly-first into the hole.`, 'sp-tree');
     }
 
-    if (t > 8 && !hasChantedEldritch) {
+    if (t > 8.0 && !hasChantedEldritch) {
       hasChantedEldritch = true;
-      triggerChantSequence(true, 0.6); // Eldritch chorus of thousands
+      triggerChant(true, 0.6); // Eldritch 16-voice choir
       setSubtitle('CHORUS OF THOUSANDS', `"Ahh... Ke.... Gaa... Luuu..."`, 'sp-tree');
       // Sucked completely inside
-      anon.position.set(0, 3.2, 0.5);
+      anon.position.set(0, 3.4, 0.5);
       anon.scale.set(0.01, 0.01, 0.01);
     }
 
@@ -1583,7 +1846,7 @@ async function buildScene7() {
   };
 }
 
-// ── SCENE ROUTER & TIMELINE CONTROLLER ───────────────────────────
+// ── SCENE CONTROLLER ─────────────────────────────────────────────
 const SCENE_BUILDERS = [
   buildScene0,
   buildScene1,
@@ -1599,49 +1862,42 @@ async function loadScene(index) {
   currentSceneIndex = clamp(index, 0, TOTAL_SCENES - 1);
   setChapterDot(currentSceneIndex);
   halloweenCard.style.opacity = '0';
-  horrorEl.style.opacity = '0';
+  vignetteEl.classList.remove('horror');
   flashEl.style.opacity = '0';
 
   await fadeToBlack(600);
-  await clearActiveScene();
+  await clearScene();
   await SCENE_BUILDERS[currentSceneIndex]();
   await fadeFromBlack(700);
 }
 
 async function nextScene() {
-  if (currentSceneIndex < TOTAL_SCENES - 1) {
-    await loadScene(currentSceneIndex + 1);
-  }
+  if (currentSceneIndex < TOTAL_SCENES - 1) await loadScene(currentSceneIndex + 1);
 }
-
 async function prevScene() {
-  if (currentSceneIndex > 0) {
-    await loadScene(currentSceneIndex - 1);
-  }
+  if (currentSceneIndex > 0) await loadScene(currentSceneIndex - 1);
 }
-
 async function jumpToScene(idx) {
   await loadScene(idx);
 }
 
-// ── ANIMATION & RENDER LOOP ───────────────────────────────────────
+// ── RENDER & ANIMATION LOOP ───────────────────────────────────────
 const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
+  const dt = clock.getDelta();
 
   if (isPlaying) {
-    sceneTime += delta;
-    if (sceneTickFunction) sceneTickFunction(sceneTime);
+    sceneTime += dt;
+    if (sceneTick) sceneTick(sceneTime, dt);
 
-    // Format time display
     const mins = Math.floor(sceneTime / 60).toString().padStart(2, '0');
     const secs = Math.floor(sceneTime % 60).toString().padStart(2, '0');
     document.getElementById('time-display').textContent = `${mins}:${secs}`;
   }
 
-  // Smooth camera or Orbit mode
+  // Smooth Camera or Free-Orbit Mode
   if (freeCamMode) {
     const cx = cameraTarget.x + orbitDist * Math.cos(orbitPitch) * Math.sin(orbitYaw);
     const cy = cameraTarget.y + orbitDist * Math.sin(orbitPitch);
@@ -1655,7 +1911,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// ── UI EVENT LISTENERS ────────────────────────────────────────────
+// ── UI EVENT HANDLERS ─────────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click', () => {
   initAudio();
   document.getElementById('splash-screen').style.opacity = '0';
@@ -1698,7 +1954,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// Start loop
+// Launch loop
 animate();
 </script>
 </body>
